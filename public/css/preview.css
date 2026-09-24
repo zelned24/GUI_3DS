@@ -1,0 +1,333 @@
+/* 3DS UI Studio - Preview Runtime & Console Chassis Styles */
+
+.preview-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+}
+
+.preview-dialog {
+  position: relative;
+  background-color: #12141c;
+  border: 1px solid #2d3345;
+  border-radius: 12px;
+  width: 940px;
+  max-width: 95vw;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+  z-index: 1001;
+}
+
+.preview-header {
+  padding: 10px 18px;
+  background-color: #1a1e2b;
+  border-bottom: 1px solid #2d3345;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.preview-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.badge-3ds {
+  background: linear-gradient(135deg, #e84545, #b91c1c);
+  color: #ffffff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
+
+.preview-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview-body {
+  display: flex;
+  padding: 16px;
+  gap: 16px;
+  overflow-y: auto;
+  align-items: flex-start;
+  justify-content: center;
+  background-color: #0b0d13;
+}
+
+/* 3DS CHASSIS CONSOLE CASING */
+.chassis-3ds {
+  background: linear-gradient(180deg, #242938 0%, #171b26 100%);
+  border: 2px solid #3d465e;
+  border-radius: 20px;
+  padding: 16px 20px;
+  width: 580px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7), inset 0 2px 4px rgba(255, 255, 255, 0.1);
+}
+
+/* TOP SCREEN HOUSING */
+.chassis-top-housing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+}
+
+.chassis-speaker-left, .chassis-speaker-right {
+  width: 14px;
+  height: 60px;
+  background-image: radial-gradient(circle, #0e1017 2px, transparent 2.5px);
+  background-size: 6px 6px;
+  opacity: 0.6;
+}
+
+.screen-frame {
+  background-color: #090a0f;
+  border: 4px solid #141721;
+  border-radius: 6px;
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.screen-frame-top canvas {
+  width: 400px;
+  height: 240px;
+  display: block;
+  image-rendering: pixelated;
+}
+
+/* HINGE */
+.chassis-hinge-bar {
+  width: 100%;
+  height: 16px;
+  background: linear-gradient(180deg, #161822, #292f42, #161822);
+  margin: 12px 0;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-top: 1px solid #3d465e;
+  border-bottom: 1px solid #0e1017;
+}
+
+.hinge-indicator {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #717d9e;
+}
+
+/* BOTTOM SCREEN HOUSING */
+.chassis-bottom-housing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 8px;
+}
+
+.screen-frame-bottom canvas {
+  width: 320px;
+  height: 240px;
+  display: block;
+  image-rendering: pixelated;
+  cursor: crosshair;
+}
+
+.touch-hint {
+  position: absolute;
+  bottom: 4px;
+  font-size: 8px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.25);
+  pointer-events: none;
+  letter-spacing: 1px;
+}
+
+/* D-PAD */
+.chassis-left-pad {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 90px;
+}
+
+.dpad-container {
+  display: grid;
+  grid-template-columns: 28px 28px 28px;
+  grid-template-rows: 28px 28px 28px;
+  align-items: center;
+  justify-items: center;
+}
+
+.dpad-btn {
+  background-color: #2e3447;
+  border: 1px solid #48526e;
+  color: #cbd5e1;
+  font-size: 11px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.dpad-btn:active {
+  background-color: #ffcb05;
+  color: #111;
+  transform: translateY(1px);
+}
+
+.dpad-up { grid-column: 2; grid-row: 1; border-radius: 4px 4px 0 0; }
+.dpad-left { grid-column: 1; grid-row: 2; border-radius: 4px 0 0 4px; }
+.dpad-center { grid-column: 2; grid-row: 2; width: 28px; height: 28px; background-color: #2e3447; border: 1px solid #48526e; }
+.dpad-right { grid-column: 3; grid-row: 2; border-radius: 0 4px 4px 0; }
+.dpad-down { grid-column: 2; grid-row: 3; border-radius: 0 0 4px 4px; }
+
+/* ACTION BUTTONS (A, B, X, Y) */
+.chassis-right-pad {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 90px;
+}
+
+.action-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.action-row-mid {
+  display: flex;
+  gap: 16px;
+}
+
+.action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: #2e3447;
+  border: 1px solid #48526e;
+  color: #f1f5f9;
+  font-weight: 700;
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.action-btn:active {
+  transform: translateY(1px);
+}
+
+.btn-a { background-color: #b91c1c; border-color: #ef4444; }
+.btn-b { background-color: #d97706; border-color: #f59e0b; }
+.btn-x { background-color: #1d4ed8; border-color: #3b82f6; }
+.btn-y { background-color: #15803d; border-color: #22c55e; }
+
+/* SHOULDER STRIP & LEGEND */
+.chassis-status-strip {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid #2d3345;
+}
+
+.shoulder-group {
+  display: flex;
+  gap: 16px;
+}
+
+.shoulder-btn {
+  background-color: #1c202e;
+  border: 1px solid #38425d;
+  color: #94a3b8;
+  font-size: 10px;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.shoulder-btn:active {
+  background-color: #ffcb05;
+  color: #111;
+}
+
+.keyboard-legend {
+  font-size: 10px;
+  color: #64748b;
+  text-align: center;
+}
+
+/* EVENT LOGS CONSOLE */
+.preview-console {
+  flex: 1;
+  background-color: #141722;
+  border: 1px solid #282f42;
+  border-radius: 8px;
+  height: 480px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.console-title {
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #94a3b8;
+  background-color: #1b2030;
+  border-bottom: 1px solid #282f42;
+}
+
+.console-logs {
+  flex: 1;
+  padding: 10px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.log-entry {
+  color: #cbd5e1;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
+.log-entry.log-info {
+  color: #38bdf8;
+}

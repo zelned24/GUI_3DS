@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3DS UI Game Creation Studio — PokéRogue 3DS</title>
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/preview.css">
+</head>
+<body>
+  <div id="app_root">
+    <!-- STUDIO TOP HEADER -->
+    <header class="studio-header">
+      <div class="header-left">
+        <div class="studio-logo">
+          <span class="logo-badge">3DS STUDIO</span>
+          <span>PokéRogue UI IDE</span>
+        </div>
+
+        <div class="screen-select-wrap">
+          <select id="screen_selector" title="Select active screen"></select>
+          <button id="btn_new_screen" class="btn btn-sm" title="Create a new Screen">+ New</button>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <!-- VIEW MODES -->
+        <div class="btn-group">
+          <button id="view_dual" class="view-btn active" title="Dual Screen View (Top + Bottom)">Dual (400×240 + 320×240)</button>
+          <button id="view_top" class="view-btn" title="Top Screen Only (400×240)">Top Screen</button>
+          <button id="view_bottom" class="view-btn" title="Bottom Screen Only (320×240)">Bottom Screen</button>
+        </div>
+
+        <!-- ZOOM -->
+        <div class="screen-select-wrap">
+          <select id="zoom_select" title="Canvas Zoom">
+            <option value="1">1×</option>
+            <option value="2" selected>2×</option>
+            <option value="3">3×</option>
+            <option value="4">4×</option>
+            <option value="fit">Fit</option>
+          </select>
+        </div>
+
+        <!-- GRID TOGGLE -->
+        <label style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted); cursor: pointer;">
+          <input type="checkbox" id="toggle_grid" checked /> Grid
+        </label>
+      </div>
+
+      <div class="header-right">
+        <!-- UNDO / REDO -->
+        <button id="btn_undo" class="btn btn-sm" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
+        <button id="btn_redo" class="btn btn-sm" title="Redo (Ctrl+Shift+Z / Ctrl+Y)" disabled>↷ Redo</button>
+
+        <div style="width: 1px; height: 20px; background: var(--border-color); margin: 0 4px;"></div>
+
+        <!-- VALIDATE -->
+        <button id="btn_validate" class="btn btn-sm" title="Validate 3DS Constraints">🔍 Validate</button>
+
+        <!-- SAVE -->
+        <button id="btn_save" class="btn btn-sm" title="Save Project (Ctrl+S)">💾 Save</button>
+
+        <!-- PREVIEW -->
+        <button id="btn_preview" class="btn btn-sm btn-preview" title="Launch Interactive 3DS Simulator">🎮 Preview</button>
+
+        <!-- GENERATE C++ -->
+        <button id="btn_generate" class="btn btn-sm btn-generator" title="Generate Deterministic C++ Screen Code">⚡ Generate C++</button>
+      </div>
+    </header>
+
+    <!-- MAIN WORKSPACE -->
+    <main class="studio-main">
+      <!-- LEFT SIDEBAR: TOOLBOX & HIERARCHY -->
+      <aside class="studio-sidebar">
+        <!-- TOOLBOX PANEL -->
+        <div class="toolbox-panel">
+          <div class="toolbox-title">PokéRogue Toolbox (MVP)</div>
+          <div class="toolbox-items">
+            <button id="btn_add_box" class="tool-item" title="Add PokéRogue Styled Box Frame">
+              <span class="tool-icon">🔲</span>
+              <div class="tool-desc">
+                <span class="tool-name">RogueBox</span>
+                <span class="tool-subtitle">Beveled styled panel</span>
+              </div>
+            </button>
+
+            <button id="btn_add_text" class="tool-item" title="Add Crisp Pixel Text">
+              <span class="tool-icon">🔤</span>
+              <div class="tool-desc">
+                <span class="tool-name">PixelText</span>
+                <span class="tool-subtitle">Bitmap font string</span>
+              </div>
+            </button>
+
+            <button id="btn_add_button" class="tool-item" title="Add Interactive Touch / Focus Button">
+              <span class="tool-icon">🔘</span>
+              <div class="tool-desc">
+                <span class="tool-name">TouchButton</span>
+                <span class="tool-subtitle">Interactive button</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- HIERARCHY / LAYERS PANEL -->
+        <div class="sidebar-header">
+          <span>Screen Hierarchy</span>
+          <span style="font-size: 10px; color: var(--text-dim);">Layers</span>
+        </div>
+        <div class="hierarchy-container" id="hierarchy_content">
+          <!-- Populated by Hierarchy.js -->
+        </div>
+      </aside>
+
+      <!-- CENTER: DUAL CANVAS VIEWPORT -->
+      <section class="canvas-viewport" id="canvas_viewport">
+        <canvas id="studio_canvas"></canvas>
+      </section>
+
+      <!-- RIGHT SIDEBAR: INSPECTOR -->
+      <aside class="studio-sidebar sidebar-right">
+        <div class="sidebar-header">
+          <span>Inspector</span>
+          <span style="font-size: 10px; color: var(--text-dim);">Properties</span>
+        </div>
+        <div class="sidebar-body" id="inspector_content">
+          <!-- Populated by Inspector.js -->
+        </div>
+      </aside>
+    </main>
+
+    <!-- FOOTER STATUS BAR -->
+    <footer class="studio-footer">
+      <div class="status-left">
+        <span id="status_message">Ready</span>
+      </div>
+      <div class="status-right">
+        <span class="footer-badge">Top: <strong>400×240</strong></span>
+        <span class="footer-badge">Bottom: <strong>320×240</strong></span>
+        <span class="footer-badge">Snapping: <strong>Pixel Perfect</strong></span>
+        <span class="footer-badge success">● Target: Citro2D / devkitARM</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- MODAL: CODE GENERATOR -->
+  <div class="studio-modal" id="code_modal"></div>
+
+  <!-- MODAL: VALIDATION -->
+  <div class="studio-modal" id="validation_modal"></div>
+
+  <!-- MODAL: INTERACTIVE PREVIEW RUNTIME -->
+  <div class="studio-modal" id="preview_modal"></div>
+
+  <!-- MAIN SCRIPT ENTRYPOINT -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "3ds-ui-studio",
+  "version": "1.0.0",
+  "description": "3DS UI Game Creation Studio - Local visual IDE for Nintendo 3DS and PokéRogue interfaces",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/run_tests.js"
+  },
+  "keywords": [
+    "3ds",
+    "pokerogue",
+    "nintendo-3ds",
+    "ui-studio",
+    "devkitarm",
+    "citro2d"
+  ],
+  "author": "3DS UI Studio Team",
+  "license": "MIT"
+}

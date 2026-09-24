@@ -1,0 +1,133 @@
+{
+  "id": "ExampleScreen",
+  "name": "Example Screen",
+  "top": {
+    "width": 400,
+    "height": 240,
+    "backgroundColor": "#12141c"
+  },
+  "bottom": {
+    "width": 320,
+    "height": 240,
+    "backgroundColor": "#1a1824"
+  },
+  "components": [
+    {
+      "id": "top_banner_box",
+      "type": "RogueBox",
+      "screen": "top",
+      "x": 40,
+      "y": 28,
+      "width": 320,
+      "height": 184,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 1,
+      "parent": null,
+      "properties": {
+        "backgroundColor": "#1e2230",
+        "borderColor": "#c83834",
+        "borderWidth": 2,
+        "borderRadius": 4
+      }
+    },
+    {
+      "id": "title_text",
+      "type": "PixelText",
+      "screen": "top",
+      "x": 80,
+      "y": 64,
+      "width": 240,
+      "height": 32,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 2,
+      "parent": "top_banner_box",
+      "properties": {
+        "text": "ROGUE 3DS TEST",
+        "fontSize": 18,
+        "color": "#ffcb05",
+        "align": "center"
+      }
+    },
+    {
+      "id": "start_button",
+      "type": "TouchButton",
+      "screen": "top",
+      "x": 130,
+      "y": 128,
+      "width": 140,
+      "height": 36,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 3,
+      "parent": "top_banner_box",
+      "properties": {
+        "label": "[ START ]",
+        "action": "START_GAME",
+        "focusId": 0,
+        "backgroundColor": "#2c3345",
+        "textColor": "#ffffff"
+      }
+    },
+    {
+      "id": "bottom_menu_box",
+      "type": "RogueBox",
+      "screen": "bottom",
+      "x": 30,
+      "y": 20,
+      "width": 260,
+      "height": 200,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 1,
+      "parent": null,
+      "properties": {
+        "backgroundColor": "#241f2a",
+        "borderColor": "#9e2835",
+        "borderWidth": 2,
+        "borderRadius": 4
+      }
+    },
+    {
+      "id": "btn_play",
+      "type": "TouchButton",
+      "screen": "bottom",
+      "x": 60,
+      "y": 56,
+      "width": 200,
+      "height": 44,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 2,
+      "parent": "bottom_menu_box",
+      "properties": {
+        "label": "PLAY",
+        "action": "OPEN_BATTLE",
+        "focusId": 1,
+        "backgroundColor": "#3a3048",
+        "textColor": "#ffffff"
+      }
+    },
+    {
+      "id": "btn_settings",
+      "type": "TouchButton",
+      "screen": "bottom",
+      "x": 60,
+      "y": 124,
+      "width": 200,
+      "height": 44,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 3,
+      "parent": "bottom_menu_box",
+      "properties": {
+        "label": "SETTINGS",
+        "action": "OPEN_SETTINGS",
+        "focusId": 2,
+        "backgroundColor": "#3a3048",
+        "textColor": "#ffffff"
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "Rogue3DS",
+  "version": "1.0.0",
+  "target": "Nintendo 3DS",
+  "screens": [
+    "ExampleScreen"
+  ],
+  "settings": {
+    "defaultScreen": "ExampleScreen",
+    "topWidth": 400,
+    "topHeight": 240,
+    "bottomWidth": 320,
+    "bottomHeight": 240,
+    "snapToPixel": true
+  }
+}
