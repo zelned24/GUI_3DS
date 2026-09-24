@@ -10,6 +10,11 @@ import { CodeGenerator } from '../public/js/generator/CodeGenerator.js';
 import { UINode } from '../public/js/core/UINode.js';
 import { Transform } from '../public/js/core/Transform.js';
 import { Props, PropertyTypes } from '../public/js/core/PropertySystem.js';
+import { PokerogueAdapter } from '../public/js/data/PokerogueAdapter.js';
+import { dataManager } from '../public/js/data/DataManager.js';
+import { PokemonBattleData, BattleState } from '../public/js/battle/BattleState.js';
+import { BattleEngine } from '../public/js/battle/BattleEngine.js';
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -258,6 +263,128 @@ test('CodeGenerator produces deterministic C++ header and source using Exporter 
   assert.ok(gen1.cpp.includes('renderer.clear(0xFF24181A);'));
 });
 
+// -------------------------------------------------------------
+// 7. POKEROGUE ADAPTER & CANONICAL DATA MODEL TESTS
+// -------------------------------------------------------------
+
+
+test('PokerogueAdapter imports Pikachu and Golem with provenance & 3DS sprites', () => {
+  const pika = dataManager.getSpecies('pikachu');
+  assert.ok(pika);
+  assert.strictEqual(pika.name, 'Pikachu');
+  assert.strictEqual(pika.nationalDexId, 25);
+  assert.deepStrictEqual(pika.types, ['Electric']);
+  assert.strictEqual(pika.abilities.primary, 'Static');
+  assert.strictEqual(pika.source.source, 'pokerogue');
+  assert.strictEqual(pika.source.license, 'AGPL-v3.0-only');
+  assert.ok(pika.sprites.atlasPath.includes('pikachu'));
+  assert.ok(pika.learnableMoves.some(m => m.id === 'thunderbolt'));
+
+  const golem = dataManager.getSpecies('golem');
+  assert.ok(golem);
+  assert.strictEqual(golem.nationalDexId, 76);
+  assert.strictEqual(golem.abilities.primary, 'Rock Head');
+  assert.strictEqual(golem.abilities.secondary, 'Sturdy');
+});
+
+
+test('DataManager builds dependency graph and validates type effectiveness', () => {
+  const depGraph = dataManager.getDependencyGraph('pikachu');
+  assert.strictEqual(depGraph.species, 'Pikachu');
+  assert.ok(depGraph.moves.includes('Thunderbolt'));
+  assert.strictEqual(depGraph.abilities.primary, 'Static');
+
+  // Type Chart: Electric vs Ground is immune (0x)
+  const multGround = dataManager.getTypeMultiplier('Electric', ['Ground']);
+  assert.strictEqual(multGround, 0);
+
+  // Type Chart: Electric vs Water is super effective (2x)
+  const multWater = dataManager.getTypeMultiplier('Electric', ['Water']);
+  assert.strictEqual(multWater, 2);
+
+  // Type Chart: Ground vs Electric is super effective (2x)
+  const multEarth = dataManager.getTypeMultiplier('Ground', ['Electric']);
+  assert.strictEqual(multEarth, 2);
+});
+
+// -------------------------------------------------------------
+// 8. BATTLE DOMAIN & DETERMINISTIC SIMULATION TESTS
+// -------------------------------------------------------------
+test('PokemonBattleData computes Gen 9 stats and supports cloning', () => {
+  const pika = dataManager.getSpecies('pikachu');
+  const battlePika = new PokemonBattleData(pika, 20);
+  assert.strictEqual(battlePika.level, 20);
+  assert.ok(battlePika.maxHp > 35);
+  assert.strictEqual(battlePika.currentHp, battlePika.maxHp);
+  assert.strictEqual(battlePika.ability, 'Static');
+
+  const cloned = battlePika.clone();
+  cloned.currentHp -= 10;
+  assert.strictEqual(battlePika.currentHp, battlePika.maxHp);
+  assert.strictEqual(cloned.currentHp, battlePika.maxHp - 10);
+});
+
+test('BattleEngine executes Pikachu vs Golem turn with damage breakdown', () => {
+  const pikaSpecies = dataManager.getSpecies('pikachu');
+  const golemSpecies = dataManager.getSpecies('golem');
+
+  const pika = new PokemonBattleData(pikaSpecies, 20);
+  const golem = new PokemonBattleData(golemSpecies, 20);
+  const state = new BattleState(pika, golem, 9999);
+  const engine = new BattleEngine(state);
+
+  let moveStarted = false;
+  let damageCalculated = false;
+  let hpChanged = false;
+
+  const breakdowns = [];
+  engine.on('MoveStarted', () => { moveStarted = true; });
+  engine.on('DamageCalculated', (ev) => {
+    damageCalculated = true;
+    assert.ok(ev.breakdown);
+    breakdowns.push(ev.breakdown);
+  });
+  engine.on('HPChanged', () => { hpChanged = true; });
+
+  // Run full turn with Tackle
+  engine.runFullTurn('tackle');
+
+  assert.ok(moveStarted, 'MoveStarted event should fire');
+  assert.ok(damageCalculated, 'DamageCalculated event should fire');
+  assert.ok(hpChanged, 'HPChanged event should fire');
+  assert.ok(breakdowns.some(b => b.move === 'Tackle' && b.attacker === 'Pikachu'), 'Tackle breakdown should be computed');
+  assert.ok(state.eventLog.length >= 3, 'Event log should record events');
+  assert.strictEqual(state.turn, 2, 'Turn should increment to 2');
+
+
+  // Time-travel / Snapshot test: Rewind to Turn 1
+  const rewound = engine.rewindToPreviousTurn();
+  assert.strictEqual(rewound, true);
+  assert.strictEqual(state.turn, 1);
+});
+
+// -------------------------------------------------------------
+// 9. NEW COMPONENT REGISTRY TESTS: HEALTHBAR & MOVEBUTTON
+// -------------------------------------------------------------
+test('ComponentRegistry registers HealthBar and MoveButton', () => {
+  const hb = ComponentRegistry.create('HealthBar', {
+    x: 40,
+    y: 30,
+    properties: { currentHp: 50, maxHp: 100 }
+  });
+  assert.strictEqual(hb.type, 'HealthBar');
+  assert.strictEqual(hb.properties.currentHp, 50);
+
+  const mb = ComponentRegistry.create('MoveButton', {
+    x: 20,
+    y: 60,
+    properties: { moveName: 'Thunderbolt', moveType: 'Electric', power: 90 }
+  });
+  assert.strictEqual(mb.type, 'MoveButton');
+  assert.strictEqual(mb.properties.moveName, 'Thunderbolt');
+  assert.strictEqual(mb.properties.power, 90);
+});
+
 console.log(`\n====================================================`);
 console.log(`  TEST RESULTS: ${passed}/${total} TESTS PASSED (100%)`);
 console.log(`====================================================\n`);
@@ -265,3 +392,4 @@ console.log(`====================================================\n`);
 if (passed !== total) {
   process.exit(1);
 }
+

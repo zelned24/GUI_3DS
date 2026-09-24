@@ -1,6 +1,8 @@
 import { RogueBox } from './RogueBox.js';
 import { PixelText } from './PixelText.js';
 import { TouchButton } from './TouchButton.js';
+import { HealthBar } from './HealthBar.js';
+import { MoveButton } from './MoveButton.js';
 
 /**
  * ComponentRegistry - Registry for instantiating and describing 3DS UI components & nodes.
@@ -44,7 +46,7 @@ export class ComponentRegistry {
   }
 }
 
-// Register MVP components with rich metadata
+// Register components with rich metadata
 ComponentRegistry.register('RogueBox', RogueBox, {
   name: 'Rogue Box',
   category: 'Containers',
@@ -65,3 +67,18 @@ ComponentRegistry.register('TouchButton', TouchButton, {
   icon: '🔘',
   description: 'Interactive button for touch or D-pad focus'
 });
+
+ComponentRegistry.register('HealthBar', HealthBar, {
+  name: 'Health Bar',
+  category: 'PokéRogue Data Views',
+  icon: '💚',
+  description: 'Dynamic HP meter bound to Pokémon combat data'
+});
+
+ComponentRegistry.register('MoveButton', MoveButton, {
+  name: 'Move Button',
+  category: 'PokéRogue Data Views',
+  icon: '⚡',
+  description: 'Battle command button bound to Pokémon move data'
+});
+

@@ -7,6 +7,8 @@ import { Hierarchy } from './editor/Hierarchy.js';
 import { PreviewRuntime } from './preview/PreviewRuntime.js';
 import { Validator } from './core/Validator.js';
 import { CodeGenerator } from './generator/CodeGenerator.js';
+import { DataStudioUI } from './data/DataStudioUI.js';
+import { BattleLabUI } from './battle/BattleLabUI.js';
 
 /**
  * StudioApp - Main Studio IDE Application orchestrator.
@@ -32,8 +34,17 @@ class StudioApp {
     this.codeModal = document.getElementById('code_modal');
     this.validationModal = document.getElementById('validation_modal');
 
+    // 5-Pillar Studios: Data Studio & Battle Lab
+    this.currentMode = 'ui';
+    this.dataStudioContainer = document.getElementById('data_studio_view');
+    this.dataStudio = new DataStudioUI(this.dataStudioContainer);
+
+    this.battleLabContainer = document.getElementById('battle_lab_view');
+    this.battleLab = new BattleLabUI(this.battleLabContainer);
+
     this._init();
   }
+
 
   async _init() {
     this._bindToolbar();
@@ -402,11 +413,61 @@ class StudioApp {
       this.canvasRenderer.render();
     });
 
+    document.getElementById('btn_add_healthbar')?.addEventListener('click', () => {
+      const activeScreenType = this.canvasRenderer.viewMode === 'bottom' ? 'bottom' : 'top';
+      const comp = this.model.addComponent({
+        type: 'HealthBar',
+        screen: activeScreenType,
+        x: 40,
+        y: 30,
+        width: 180,
+        height: 18,
+        properties: {
+          pokemonBinding: 'pikachu',
+          currentHp: 74,
+          maxHp: 82,
+          showNumbers: true
+        }
+      });
+      this.selection.select(comp.id);
+      this.canvasRenderer.render();
+    });
+
+    document.getElementById('btn_add_movebutton')?.addEventListener('click', () => {
+      const activeScreenType = this.canvasRenderer.viewMode === 'top' ? 'top' : 'bottom';
+      const comp = this.model.addComponent({
+        type: 'MoveButton',
+        screen: activeScreenType,
+        x: 20,
+        y: 60,
+        width: 135,
+        height: 40,
+        properties: {
+          moveBinding: 'thunderbolt',
+          moveName: 'Thunderbolt',
+          moveType: 'Electric',
+          category: 'Special',
+          power: 90,
+          currentPp: 15,
+          maxPp: 15,
+          action: 'USE_THUNDERBOLT'
+        }
+      });
+      this.selection.select(comp.id);
+      this.canvasRenderer.render();
+    });
+
+    // 5-Pillar Mode Switcher Tabs
+    document.getElementById('mode_ui_studio')?.addEventListener('click', () => this.setStudioMode('ui'));
+    document.getElementById('mode_data_studio')?.addEventListener('click', () => this.setStudioMode('data'));
+    document.getElementById('mode_battle_lab')?.addEventListener('click', () => this.setStudioMode('battle'));
+
     // View mode selectors
     document.getElementById('view_dual')?.addEventListener('click', (e) => {
       this._setActiveViewBtn(e.target);
       this.canvasRenderer.setViewMode('dual');
     });
+
     document.getElementById('view_top')?.addEventListener('click', (e) => {
       this._setActiveViewBtn(e.target);
       this.canvasRenderer.setViewMode('top');
@@ -508,6 +569,40 @@ class StudioApp {
     document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
   }
+
+  setStudioMode(mode) {
+    this.currentMode = mode;
+    const uiView = document.getElementById('ui_studio_view');
+    const dataView = document.getElementById('data_studio_view');
+    const battleView = document.getElementById('battle_lab_view');
+
+    document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+
+    if (mode === 'ui') {
+      document.getElementById('mode_ui_studio')?.classList.add('active');
+      if (uiView) uiView.style.display = 'flex';
+      if (dataView) dataView.style.display = 'none';
+      if (battleView) battleView.style.display = 'none';
+      this.canvasRenderer.resizeToContainer();
+      this.canvasRenderer.render();
+      this.updateStatus('UI Studio active — Designing 3DS screens & components.');
+    } else if (mode === 'data') {
+      document.getElementById('mode_data_studio')?.classList.add('active');
+      if (uiView) uiView.style.display = 'none';
+      if (dataView) dataView.style.display = 'block';
+      if (battleView) battleView.style.display = 'none';
+      this.dataStudio.render();
+      this.updateStatus('Data Studio active — Canonical PokéRogue species, moves & abilities.');
+    } else if (mode === 'battle') {
+      document.getElementById('mode_battle_lab')?.classList.add('active');
+      if (uiView) uiView.style.display = 'none';
+      if (dataView) dataView.style.display = 'none';
+      if (battleView) battleView.style.display = 'block';
+      this.battleLab.render();
+      this.updateStatus('Battle Lab active — Simulating combat, phase queue & damage debugger.');
+    }
+  }
+
 
   _populateScreenSelector() {
     const sel = document.getElementById('screen_selector');

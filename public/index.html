@@ -14,8 +14,15 @@
       <div class="header-left">
         <div class="studio-logo">
           <span class="logo-badge">3DS STUDIO</span>
-          <span>PokéRogue UI IDE</span>
+          <span>PokéRogue 3DS</span>
         </div>
+
+        <!-- STUDIO 5-PILLAR MODE SWITCHER -->
+        <nav class="studio-mode-switcher">
+          <button id="mode_ui_studio" class="mode-tab active" title="UI Screens, Components, Layout">🎨 UI Studio</button>
+          <button id="mode_data_studio" class="mode-tab" title="Canonical PokéRogue Data, Species, Moves, Abilities">📊 Data Studio</button>
+          <button id="mode_battle_lab" class="mode-tab" title="Battle Simulation, Replay, Phase Debugger">⚔️ Battle Lab</button>
+        </nav>
 
         <div class="screen-select-wrap">
           <select id="screen_selector" title="Select active screen"></select>
@@ -70,12 +77,12 @@
     </header>
 
     <!-- MAIN WORKSPACE -->
-    <main class="studio-main">
+    <main class="studio-main" id="ui_studio_view">
       <!-- LEFT SIDEBAR: TOOLBOX & HIERARCHY -->
       <aside class="studio-sidebar">
         <!-- TOOLBOX PANEL -->
         <div class="toolbox-panel">
-          <div class="toolbox-title">PokéRogue Toolbox (MVP)</div>
+          <div class="toolbox-title">PokéRogue Toolbox</div>
           <div class="toolbox-items">
             <button id="btn_add_box" class="tool-item" title="Add PokéRogue Styled Box Frame">
               <span class="tool-icon">🔲</span>
@@ -98,6 +105,22 @@
               <div class="tool-desc">
                 <span class="tool-name">TouchButton</span>
                 <span class="tool-subtitle">Interactive button</span>
+              </div>
+            </button>
+
+            <button id="btn_add_healthbar" class="tool-item" title="Add Data-Bound Health Bar">
+              <span class="tool-icon">💚</span>
+              <div class="tool-desc">
+                <span class="tool-name">HealthBar</span>
+                <span class="tool-subtitle">Dynamic Pokémon HP</span>
+              </div>
+            </button>
+
+            <button id="btn_add_movebutton" class="tool-item" title="Add Bound PokéRogue Move Button">
+              <span class="tool-icon">⚡</span>
+              <div class="tool-desc">
+                <span class="tool-name">MoveButton</span>
+                <span class="tool-subtitle">Move & PP bound</span>
               </div>
             </button>
           </div>
@@ -129,6 +152,12 @@
         </div>
       </aside>
     </main>
+
+    <!-- DATA STUDIO SUBVIEW -->
+    <section class="studio-subview" id="data_studio_view" style="display: none;"></section>
+
+    <!-- BATTLE LAB SUBVIEW -->
+    <section class="studio-subview" id="battle_lab_view" style="display: none;"></section>
 
     <!-- FOOTER STATUS BAR -->
     <footer class="studio-footer">
