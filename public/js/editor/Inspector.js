@@ -1,5 +1,8 @@
+import { PropertyTypes } from '../core/PropertySystem.js';
+
 /**
- * Inspector - Two-way property binding inspector for 3DS UI components.
+ * Inspector - Schema-driven two-way property binding inspector for 3DS UI components & nodes.
+ * Automatically constructs property controls from Component schemas.
  */
 export class Inspector {
   constructor(containerElement, projectModel, selectionManager) {
@@ -17,9 +20,9 @@ export class Inspector {
     });
 
     this.model.subscribe((type, data) => {
-      if (type === 'componentUpdated' && !this.isEditing) {
+      if ((type === 'componentUpdated' || type === 'hierarchyChanged') && !this.isEditing) {
         const primary = this.selection.getSelectedComponents()[0];
-        if (primary && primary.id === data.component?.id) {
+        if (primary && (!data.component || primary.id === data.component.id)) {
           this.render(primary);
         }
       }
@@ -38,16 +41,31 @@ export class Inspector {
       return;
     }
 
-    const p = comp.properties || {};
+    const schema = comp.constructor.schema || { properties: {} };
+    const screen = this.model.getActiveScreen();
+
+    // Potential container parents on the same physical screen
+    const potentialParents = (screen?.components || []).filter(c => 
+      c.id !== comp.id && 
+      c.screen === comp.screen && 
+      !c.isDescendantOf(comp.id, this.model)
+    );
 
     let html = `
       <div class="inspector-header">
-        <div class="badge-type">${comp.type}</div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 16px;">${schema.icon || '📦'}</span>
+          <div>
+            <div class="badge-type">${schema.displayName || comp.type}</div>
+            <div style="font-size: 10px; color: var(--text-dim);">${comp.id}</div>
+          </div>
+        </div>
         <div class="badge-screen ${comp.screen}">${comp.screen.toUpperCase()}</div>
       </div>
 
+      <!-- IDENTITY & HIERARCHY -->
       <div class="inspector-section">
-        <div class="section-title">Identity & Layout</div>
+        <div class="section-title">Identity & Hierarchy</div>
         
         <div class="field-row">
           <label>ID</label>
@@ -55,12 +73,32 @@ export class Inspector {
         </div>
 
         <div class="field-row">
-          <label>Screen</label>
+          <label>Display Name</label>
+          <input type="text" id="prop_name" class="input-text" value="${comp.name || comp.id}" />
+        </div>
+
+        <div class="field-row">
+          <label>Parent Container</label>
+          <select id="prop_parent" class="input-select">
+            <option value="" ${!comp.parent ? 'selected' : ''}>(None - Root Level)</option>
+            ${potentialParents.map(p => `
+              <option value="${p.id}" ${comp.parent === p.id ? 'selected' : ''}>${p.id} (${p.type})</option>
+            `).join('')}
+          </select>
+        </div>
+
+        <div class="field-row">
+          <label>Screen Target</label>
           <select id="prop_screen" class="input-select">
             <option value="top" ${comp.screen === 'top' ? 'selected' : ''}>Top (400×240)</option>
             <option value="bottom" ${comp.screen === 'bottom' ? 'selected' : ''}>Bottom (320×240)</option>
           </select>
         </div>
+      </div>
+
+      <!-- 3DS TRANSFORM -->
+      <div class="inspector-section">
+        <div class="section-title">3DS Spatial Transform</div>
 
         <div class="field-grid-2">
           <div class="field-row">
@@ -75,12 +113,34 @@ export class Inspector {
 
         <div class="field-grid-2">
           <div class="field-row">
-            <label>Width</label>
+            <label>Width (px)</label>
             <input type="number" id="prop_width" class="input-num" value="${comp.width}" min="1" step="1" />
           </div>
           <div class="field-row">
-            <label>Height</label>
+            <label>Height (px)</label>
             <input type="number" id="prop_height" class="input-num" value="${comp.height}" min="1" step="1" />
+          </div>
+        </div>
+
+        <div class="field-grid-2">
+          <div class="field-row">
+            <label>Scale X</label>
+            <input type="number" id="prop_scaleX" class="input-num" value="${comp.transform.scaleX}" step="0.05" />
+          </div>
+          <div class="field-row">
+            <label>Scale Y</label>
+            <input type="number" id="prop_scaleY" class="input-num" value="${comp.transform.scaleY}" step="0.05" />
+          </div>
+        </div>
+
+        <div class="field-grid-2">
+          <div class="field-row">
+            <label>Rotation (°)</label>
+            <input type="number" id="prop_rotation" class="input-num" value="${comp.transform.rotation}" step="1" />
+          </div>
+          <div class="field-row">
+            <label>Opacity</label>
+            <input type="number" id="prop_opacity" class="input-num" value="${comp.opacity}" min="0" max="1" step="0.05" />
           </div>
         </div>
 
@@ -97,107 +157,24 @@ export class Inspector {
       </div>
     `;
 
-    // Type-specific properties section
-    html += `<div class="inspector-section">
-      <div class="section-title">${comp.type} Properties</div>
-    `;
+    // Group schema properties by category
+    const categories = new Map();
+    const schemaProps = schema.properties || {};
 
-    if (comp.type === 'RogueBox') {
+    for (const [propKey, propDef] of Object.entries(schemaProps)) {
+      const cat = propDef.category || 'Properties';
+      if (!categories.has(cat)) categories.set(cat, []);
+      categories.get(cat).push({ key: propKey, def: propDef });
+    }
+
+    for (const [catName, propList] of categories.entries()) {
       html += `
-        <div class="field-row">
-          <label>Background</label>
-          <div class="color-picker-wrap">
-            <input type="color" id="prop_bg" value="${p.backgroundColor || '#1e2230'}" />
-            <input type="text" id="prop_bg_text" class="input-color-hex" value="${p.backgroundColor || '#1e2230'}" />
-          </div>
-        </div>
-        <div class="field-row">
-          <label>Border Color</label>
-          <div class="color-picker-wrap">
-            <input type="color" id="prop_border" value="${p.borderColor || '#c83834'}" />
-            <input type="text" id="prop_border_text" class="input-color-hex" value="${p.borderColor || '#c83834'}" />
-          </div>
-        </div>
-        <div class="field-grid-2">
-          <div class="field-row">
-            <label>Border Width</label>
-            <input type="number" id="prop_borderWidth" class="input-num" value="${p.borderWidth ?? 2}" min="0" max="16" />
-          </div>
-          <div class="field-row">
-            <label>Radius</label>
-            <input type="number" id="prop_borderRadius" class="input-num" value="${p.borderRadius ?? 4}" min="0" max="24" />
-          </div>
-        </div>
-      `;
-    } else if (comp.type === 'PixelText') {
-      html += `
-        <div class="field-row">
-          <label>Text</label>
-          <input type="text" id="prop_text" class="input-text" value="${this._escapeHtml(p.text || '')}" />
-        </div>
-        <div class="field-grid-2">
-          <div class="field-row">
-            <label>Font Size</label>
-            <input type="number" id="prop_fontSize" class="input-num" value="${p.fontSize || 14}" min="8" max="64" />
-          </div>
-          <div class="field-row">
-            <label>Align</label>
-            <select id="prop_align" class="input-select">
-              <option value="left" ${p.align === 'left' ? 'selected' : ''}>Left</option>
-              <option value="center" ${p.align === 'center' ? 'selected' : ''}>Center</option>
-              <option value="right" ${p.align === 'right' ? 'selected' : ''}>Right</option>
-            </select>
-          </div>
-        </div>
-        <div class="field-row">
-          <label>Color</label>
-          <div class="color-picker-wrap">
-            <input type="color" id="prop_color" value="${p.color || '#ffffff'}" />
-            <input type="text" id="prop_color_text" class="input-color-hex" value="${p.color || '#ffffff'}" />
-          </div>
-        </div>
-      `;
-    } else if (comp.type === 'TouchButton') {
-      html += `
-        <div class="field-row">
-          <label>Label</label>
-          <input type="text" id="prop_label" class="input-text" value="${this._escapeHtml(p.label || '')}" />
-        </div>
-        <div class="field-grid-2">
-          <div class="field-row">
-            <label>Focus ID</label>
-            <input type="number" id="prop_focusId" class="input-num" value="${p.focusId ?? 0}" min="0" />
-          </div>
-          <div class="field-row">
-            <label>Action Tag</label>
-            <input type="text" id="prop_action" class="input-text" value="${this._escapeHtml(p.action || 'ON_CLICK')}" />
-          </div>
-        </div>
-        <div class="field-row">
-          <label>Button Color</label>
-          <div class="color-picker-wrap">
-            <input type="color" id="prop_btn_bg" value="${p.backgroundColor || '#2b3040'}" />
-            <input type="text" id="prop_btn_bg_text" class="input-color-hex" value="${p.backgroundColor || '#2b3040'}" />
-          </div>
-        </div>
-        <div class="field-row">
-          <label>Border Color</label>
-          <div class="color-picker-wrap">
-            <input type="color" id="prop_btn_border" value="${p.borderColor || '#e84545'}" />
-            <input type="text" id="prop_btn_border_text" class="input-color-hex" value="${p.borderColor || '#e84545'}" />
-          </div>
-        </div>
-        <div class="field-row">
-          <label>Text Color</label>
-          <div class="color-picker-wrap">
-            <input type="color" id="prop_btn_txt" value="${p.textColor || '#ffffff'}" />
-            <input type="text" id="prop_btn_txt_text" class="input-color-hex" value="${p.textColor || '#ffffff'}" />
-          </div>
+        <div class="inspector-section">
+          <div class="section-title">${catName}</div>
+          ${propList.map(({ key, def }) => this._renderPropertyWidget(comp, key, def)).join('')}
         </div>
       `;
     }
-
-    html += `</div>`;
 
     // Action buttons (duplicate, delete)
     html += `
@@ -208,11 +185,83 @@ export class Inspector {
     `;
 
     this.container.innerHTML = html;
-    this._attachInputHandlers(comp);
+    this._attachInputHandlers(comp, schema);
   }
 
-  _attachInputHandlers(comp) {
-    const bind = (id, propKey, isNumeric = false, isBool = false, isNestedProp = false) => {
+  _renderPropertyWidget(comp, key, def) {
+    const val = comp.properties[key] !== undefined ? comp.properties[key] : def.defaultValue;
+    const inputId = `prop_custom_${key}`;
+
+    switch (def.type) {
+      case PropertyTypes.BOOLEAN:
+        return `
+          <div class="field-row checkbox-row">
+            <label>${def.displayName}</label>
+            <input type="checkbox" id="${inputId}" data-prop="${key}" ${val ? 'checked' : ''} />
+          </div>
+        `;
+
+      case PropertyTypes.INTEGER:
+        return `
+          <div class="field-row">
+            <label>${def.displayName}</label>
+            <input type="number" id="${inputId}" data-prop="${key}" class="input-num" value="${val}" 
+              ${def.min !== undefined ? `min="${def.min}"` : ''} 
+              ${def.max !== undefined ? `max="${def.max}"` : ''} 
+              step="${def.step || 1}" />
+          </div>
+        `;
+
+      case PropertyTypes.FLOAT:
+        return `
+          <div class="field-row">
+            <label>${def.displayName}</label>
+            <input type="number" id="${inputId}" data-prop="${key}" class="input-num" value="${val}" 
+              ${def.min !== undefined ? `min="${def.min}"` : ''} 
+              ${def.max !== undefined ? `max="${def.max}"` : ''} 
+              step="${def.step || 0.1}" />
+          </div>
+        `;
+
+      case PropertyTypes.COLOR:
+        return `
+          <div class="field-row">
+            <label>${def.displayName}</label>
+            <div class="color-picker-wrap">
+              <input type="color" id="${inputId}" data-prop="${key}" value="${val || '#ffffff'}" />
+              <input type="text" id="${inputId}_text" class="input-color-hex" value="${val || '#ffffff'}" />
+            </div>
+          </div>
+        `;
+
+      case PropertyTypes.ENUM:
+        return `
+          <div class="field-row">
+            <label>${def.displayName}</label>
+            <select id="${inputId}" data-prop="${key}" class="input-select">
+              ${def.options.map(opt => {
+                const optVal = typeof opt === 'object' ? opt.value : opt;
+                const optLabel = typeof opt === 'object' ? opt.label : opt;
+                return `<option value="${optVal}" ${val === optVal ? 'selected' : ''}>${optLabel}</option>`;
+              }).join('')}
+            </select>
+          </div>
+        `;
+
+      case PropertyTypes.STRING:
+      case PropertyTypes.ACTION:
+      default:
+        return `
+          <div class="field-row">
+            <label>${def.displayName}</label>
+            <input type="text" id="${inputId}" data-prop="${key}" class="input-text" value="${this._escapeHtml(val ?? '')}" />
+          </div>
+        `;
+    }
+  }
+
+  _attachInputHandlers(comp, schema) {
+    const bindDirect = (id, propKey, isNumeric = false, isBool = false) => {
       const el = this.container.querySelector(`#${id}`);
       if (!el) return;
 
@@ -222,16 +271,12 @@ export class Inspector {
         if (isBool) {
           val = el.checked;
         } else if (isNumeric) {
-          val = Math.round(parseFloat(el.value) || 0);
+          val = parseFloat(el.value) || 0;
         } else {
           val = el.value;
         }
 
-        const updates = isNestedProp
-          ? { properties: { [propKey]: val } }
-          : { [propKey]: val };
-
-        this.model.updateComponent(comp.id, updates);
+        this.model.updateComponent(comp.id, { [propKey]: val });
         setTimeout(() => { this.isEditing = false; }, 50);
       };
 
@@ -239,53 +284,68 @@ export class Inspector {
       el.addEventListener('change', handler);
     };
 
-    // Standard properties
-    bind('prop_id', 'id');
-    bind('prop_screen', 'screen');
-    bind('prop_x', 'x', true);
-    bind('prop_y', 'y', true);
-    bind('prop_width', 'width', true);
-    bind('prop_height', 'height', true);
-    bind('prop_zIndex', 'zIndex', true);
-    bind('prop_visible', 'visible', false, true);
+    // Standard Node & Transform properties
+    bindDirect('prop_id', 'id');
+    bindDirect('prop_name', 'name');
+    bindDirect('prop_screen', 'screen');
+    bindDirect('prop_x', 'x', true);
+    bindDirect('prop_y', 'y', true);
+    bindDirect('prop_width', 'width', true);
+    bindDirect('prop_height', 'height', true);
+    bindDirect('prop_scaleX', 'scaleX', true);
+    bindDirect('prop_scaleY', 'scaleY', true);
+    bindDirect('prop_rotation', 'rotation', true);
+    bindDirect('prop_opacity', 'opacity', true);
+    bindDirect('prop_zIndex', 'zIndex', true);
+    bindDirect('prop_visible', 'visible', false, true);
 
-    // Color picker dual sync helper
-    const bindColor = (pickerId, textId, propKey) => {
-      const picker = this.container.querySelector(`#${pickerId}`);
-      const text = this.container.querySelector(`#${textId}`);
-      if (!picker || !text) return;
-
-      picker.addEventListener('input', () => {
-        text.value = picker.value;
-        this.model.updateComponent(comp.id, { properties: { [propKey]: picker.value } });
+    // Parent reparenting binding
+    const parentSelect = this.container.querySelector('#prop_parent');
+    if (parentSelect) {
+      parentSelect.addEventListener('change', () => {
+        const newParent = parentSelect.value || null;
+        this.model.reparentNode(comp.id, newParent);
       });
+    }
 
-      text.addEventListener('input', () => {
-        if (/^#[0-9a-fA-F]{6}$/.test(text.value)) {
-          picker.value = text.value;
-          this.model.updateComponent(comp.id, { properties: { [propKey]: text.value } });
+    // Dynamic schema property bindings
+    const schemaProps = schema.properties || {};
+    for (const [key, propDef] of Object.entries(schemaProps)) {
+      const inputId = `prop_custom_${key}`;
+      const el = this.container.querySelector(`#${inputId}`);
+      if (!el) continue;
+
+      if (propDef.type === PropertyTypes.COLOR) {
+        const textEl = this.container.querySelector(`#${inputId}_text`);
+        el.addEventListener('input', () => {
+          if (textEl) textEl.value = el.value;
+          this.model.updateComponent(comp.id, { properties: { [key]: el.value } });
+        });
+        if (textEl) {
+          textEl.addEventListener('input', () => {
+            if (/^#[0-9a-fA-F]{6}$/.test(textEl.value)) {
+              el.value = textEl.value;
+              this.model.updateComponent(comp.id, { properties: { [key]: textEl.value } });
+            }
+          });
         }
-      });
-    };
+      } else {
+        const handler = () => {
+          this.isEditing = true;
+          let val = el.value;
+          if (propDef.type === PropertyTypes.BOOLEAN) {
+            val = el.checked;
+          } else if (propDef.type === PropertyTypes.INTEGER || propDef.type === PropertyTypes.FLOAT) {
+            val = parseFloat(el.value);
+          }
+          const sanitized = propDef.sanitize(val);
+          this.model.updateComponent(comp.id, { properties: { [key]: sanitized } });
+          setTimeout(() => { this.isEditing = false; }, 50);
+        };
 
-    // Component-specific properties
-    if (comp.type === 'RogueBox') {
-      bindColor('prop_bg', 'prop_bg_text', 'backgroundColor');
-      bindColor('prop_border', 'prop_border_text', 'borderColor');
-      bind('prop_borderWidth', 'borderWidth', true, false, true);
-      bind('prop_borderRadius', 'borderRadius', true, false, true);
-    } else if (comp.type === 'PixelText') {
-      bind('prop_text', 'text', false, false, true);
-      bind('prop_fontSize', 'fontSize', true, false, true);
-      bind('prop_align', 'align', false, false, true);
-      bindColor('prop_color', 'prop_color_text', 'color');
-    } else if (comp.type === 'TouchButton') {
-      bind('prop_label', 'label', false, false, true);
-      bind('prop_action', 'action', false, false, true);
-      bind('prop_focusId', 'focusId', true, false, true);
-      bindColor('prop_btn_bg', 'prop_btn_bg_text', 'backgroundColor');
-      bindColor('prop_btn_border', 'prop_btn_border_text', 'borderColor');
-      bindColor('prop_btn_txt', 'prop_btn_txt_text', 'textColor');
+        el.addEventListener('input', handler);
+        el.addEventListener('change', handler);
+      }
     }
 
     // Action buttons

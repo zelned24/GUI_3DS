@@ -3,19 +3,22 @@ import { PixelText } from './PixelText.js';
 import { TouchButton } from './TouchButton.js';
 
 /**
- * ComponentRegistry - Registry for instantiating and describing 3DS UI components.
+ * ComponentRegistry - Registry for instantiating and describing 3DS UI components & nodes.
  */
 export class ComponentRegistry {
   static components = new Map();
 
   static register(type, componentClass, metadata = {}) {
+    const schema = componentClass.schema || {};
     this.components.set(type, {
       type,
       componentClass,
-      name: metadata.name || type,
-      category: metadata.category || 'General',
-      icon: metadata.icon || '📦',
-      description: metadata.description || ''
+      name: metadata.name || schema.displayName || type,
+      category: metadata.category || schema.category || 'General',
+      icon: metadata.icon || schema.icon || '📦',
+      description: metadata.description || schema.description || '',
+      capabilities: schema.capabilities || ['render'],
+      schema
     });
   }
 
@@ -35,9 +38,13 @@ export class ComponentRegistry {
   static get(type) {
     return this.components.get(type);
   }
+
+  static getSchema(type) {
+    return this.components.get(type)?.schema || null;
+  }
 }
 
-// Register MVP components
+// Register MVP components with rich metadata
 ComponentRegistry.register('RogueBox', RogueBox, {
   name: 'Rogue Box',
   category: 'Containers',

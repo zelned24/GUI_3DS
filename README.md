@@ -157,17 +157,33 @@ Nintendo 3DS posee dos pantallas físicas con características diferentes:
 
 ---
 
-## 6. Cómo Agregar un Nuevo Componente
+## 6. Cómo Agregar un Nuevo Componente (Arquitectura Schema-Driven)
 
-Para añadir un nuevo componente al Studio (por ejemplo, `HealthBar`):
+Gracias a la arquitectura basada en **`UINode`** y **`PropertySystem`**, agregar un componente **NO requiere modificar el Inspector ni el Canvas**:
 
-### Paso 1: Crear la clase del componente
+### Paso 1: Crear la clase del componente con su Schema
 Crea `public/js/components/HealthBar.js` heredando de `BaseComponent`:
 
 ```javascript
 import { BaseComponent } from './BaseComponent.js';
+import { Props } from '../core/PropertySystem.js';
 
 export class HealthBar extends BaseComponent {
+  static schema = {
+    type: 'HealthBar',
+    displayName: 'Health Bar',
+    category: 'Combat',
+    icon: '💚',
+    description: 'Barra de vida dinámica para Pokémon',
+    capabilities: ['render'],
+    properties: {
+      currentHP: Props.integer('Current HP', 100, { min: 0, max: 999, category: 'Data' }),
+      maxHP: Props.integer('Max HP', 100, { min: 1, max: 999, category: 'Data' }),
+      barColor: Props.color('Bar Color', '#22c55e', { category: 'Style' }),
+      backgroundColor: Props.color('Background Color', '#1f2937', { category: 'Style' })
+    }
+  };
+
   constructor(data = {}) {
     super({
       ...data,
@@ -175,15 +191,6 @@ export class HealthBar extends BaseComponent {
       width: Math.round(data.width ?? 120),
       height: Math.round(data.height ?? 10)
     });
-  }
-
-  getDefaultProperties() {
-    return {
-      currentHP: 100,
-      maxHP: 100,
-      barColor: '#22c55e',
-      backgroundColor: '#1f2937'
-    };
   }
 
   draw(ctx, options = {}) {
@@ -207,37 +214,41 @@ En `public/js/components/ComponentRegistry.js`:
 ```javascript
 import { HealthBar } from './HealthBar.js';
 
-ComponentRegistry.register('HealthBar', HealthBar, {
-  name: 'Health Bar',
-  category: 'Combate',
-  icon: '💚',
-  description: 'Barra de vida dinámica para Pokémon'
-});
+ComponentRegistry.register('HealthBar', HealthBar);
 ```
 
-### Paso 3: Agregar soporte en el Inspector (Opcional)
-En `public/js/editor/Inspector.js`, agrega los controles visuales correspondientes en el método `render(comp)` y sus bindings en `_attachInputHandlers(comp)`.
+¡El **Inspector** detectará automáticamente el esquema y generará los controles visuales correspondientes sin tocar ningún otro archivo!
 
 ---
 
-## 7. Cómo Modificar el Generador C++
+## 7. Cómo Modificar el Generador C++ (Contrato de Exporters)
 
-El generador determinista se encuentra en `public/js/generator/CodeGenerator.js`.
+El generador determinista se encuentra en `public/js/generator/CodeGenerator.js` y utiliza el patrón **Exporter**:
 
 Para soportar un nuevo componente en C++:
-1. En `generateHeader()`, añade el puntero miembro correspondiente:
-   ```javascript
-   if (comp.type === 'HealthBar') {
-     lines.push(`    std::unique_ptr<HealthBar> ${varName};`);
-   }
-   ```
-2. En `writeComponentInit()`, añade la instanciación con coordenadas enteras:
-   ```javascript
-   if (comp.type === 'HealthBar') {
-     lines.push(`    ${varName} = std::make_unique<HealthBar>(${x}, ${y}, ${w}, ${h});`);
-   }
-   ```
-3. En `drawTop()` o `drawBottom()`, el generador llamará automáticamente a `${varName}->draw(renderer);`.
+```javascript
+class HealthBarExporter {
+  getIncludes() {
+    return ['#include "ui/health_bar.hpp"'];
+  }
+
+  getMember(comp, varName) {
+    return `std::unique_ptr<HealthBar> ${varName};`;
+  }
+
+  getInitialization(comp, varName) {
+    return [
+      `    ${varName} = std::make_unique<HealthBar>(${comp.x}.0f, ${comp.y}.0f, ${comp.width}.0f, ${comp.height}.0f);`
+    ];
+  }
+
+  getDrawCall(comp, varName) {
+    return `    if (${varName}) ${varName}->draw(renderer);`;
+  }
+}
+
+CodeGenerator.registerExporter('HealthBar', new HealthBarExporter());
+```
 
 ### Determinismo Estricto
 El generador garantiza que:

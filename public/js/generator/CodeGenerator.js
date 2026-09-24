@@ -1,7 +1,124 @@
 /**
- * CodeGenerator - Deterministic C++ generator for 3DS / Citro2D / devkitARM screens.
+ * CodeGenerator - Modular, deterministic C++ generator for Citro2D / devkitARM 3DS screens.
+ * Implements an Exporter contract pattern to decouple component generation from the core generator.
  */
+
+/**
+ * Base Component Exporter Contract
+ */
+class BaseComponentExporter {
+  getIncludes() {
+    return [];
+  }
+
+  getMember(comp, varName) {
+    return `std::unique_ptr<Panel> ${varName};`;
+  }
+
+  getInitialization(comp, varName) {
+    return [`    // Generic initialization for ${comp.id}`];
+  }
+
+  getDrawCall(comp, varName) {
+    return `    if (${varName}) ${varName}->draw(renderer);`;
+  }
+
+  getInputBinding(comp, varName) {
+    return null;
+  }
+}
+
+class RogueBoxExporter extends BaseComponentExporter {
+  getIncludes() {
+    return ['#include "ui/panel.hpp"'];
+  }
+
+  getMember(comp, varName) {
+    return `std::unique_ptr<Panel> ${varName};`;
+  }
+
+  getInitialization(comp, varName) {
+    const lines = [];
+    const x = `${comp.x}.0f`;
+    const y = `${comp.y}.0f`;
+    const w = `${comp.width}.0f`;
+    const h = `${comp.height}.0f`;
+    const props = comp.properties || {};
+    const bg = CodeGenerator.hexColorToUint32(props.backgroundColor || '#1e2230');
+    const border = CodeGenerator.hexColorToUint32(props.borderColor || '#c83834');
+
+    lines.push(`    ${varName} = std::make_unique<Panel>(${x}, ${y}, ${w}, ${h}, PanelStyle::ROGUE_BOX);`);
+    lines.push(`    ${varName}->backgroundColor = ${bg};`);
+    lines.push(`    ${varName}->borderColor = ${border};`);
+    return lines;
+  }
+}
+
+class PixelTextExporter extends BaseComponentExporter {
+  getIncludes() {
+    return ['#include "ui/text.hpp"'];
+  }
+
+  getMember(comp, varName) {
+    return `std::unique_ptr<Text> ${varName};`;
+  }
+
+  getInitialization(comp, varName) {
+    const x = `${comp.x}.0f`;
+    const y = `${comp.y}.0f`;
+    const props = comp.properties || {};
+    const text = CodeGenerator.escapeString(props.text || '');
+    const color = CodeGenerator.hexColorToUint32(props.color || '#ffffff');
+
+    return [
+      `    ${varName} = std::make_unique<Text>(${x}, ${y}, "${text}", ${color}, true);`
+    ];
+  }
+}
+
+class TouchButtonExporter extends BaseComponentExporter {
+  getIncludes() {
+    return ['#include "ui/button.hpp"', '#include "ui/focus_manager.hpp"'];
+  }
+
+  getMember(comp, varName) {
+    return `std::unique_ptr<Button> ${varName};`;
+  }
+
+  getInitialization(comp, varName) {
+    const x = `${comp.x}.0f`;
+    const y = `${comp.y}.0f`;
+    const w = `${comp.width}.0f`;
+    const h = `${comp.height}.0f`;
+    const props = comp.properties || {};
+    const label = CodeGenerator.escapeString(props.label || 'BUTTON');
+    const focusId = Number.isInteger(props.focusId) ? props.focusId : 0;
+
+    return [
+      `    ${varName} = std::make_unique<Button>(${x}, ${y}, ${w}, ${h}, "${label}", ${focusId});`,
+      `    m_focus_manager.addElement(${varName}.get());`
+    ];
+  }
+}
+
 export class CodeGenerator {
+  static exporters = new Map([
+    ['RogueBox', new RogueBoxExporter()],
+    ['PixelText', new PixelTextExporter()],
+    ['TouchButton', new TouchButtonExporter()]
+  ]);
+
+  /**
+   * Registers a custom component exporter.
+   */
+  static registerExporter(type, exporterInstance) {
+    this.exporters.set(type, exporterInstance);
+  }
+
+  static getExporter(type) {
+    return this.exporters.get(type) || new BaseComponentExporter();
+  }
+
   /**
    * Generates both .hpp and .cpp files for a given Screen data model.
    * @param {Object} screenData 
@@ -56,7 +173,7 @@ export class CodeGenerator {
       clean = clean.split('').map(c => c + c).join('');
     }
     if (clean.length === 8) {
-      // #RRGGBBAA
+      // #RRGGBBAA -> 0xAABBGGRR (Citro2D format)
       const r = clean.slice(0, 2);
       const g = clean.slice(2, 4);
       const b = clean.slice(4, 6);
@@ -85,10 +202,20 @@ export class CodeGenerator {
     lines.push('#pragma once');
     lines.push('');
     lines.push('#include "screens/screen.hpp"');
-    lines.push('#include "ui/panel.hpp"');
-    lines.push('#include "ui/button.hpp"');
-    lines.push('#include "ui/text.hpp"');
-    lines.push('#include "ui/focus_manager.hpp"');
+
+    // Collect distinct includes from component exporters
+    const includeSet = new Set([
+      '#include "ui/panel.hpp"',
+      '#include "ui/button.hpp"',
+      '#include "ui/text.hpp"',
+      '#include "ui/focus_manager.hpp"'
+    ]);
+    for (const comp of [...topComps, ...bottomComps]) {
+      const exp = this.getExporter(comp.type);
+      exp.getIncludes().forEach(inc => includeSet.add(inc));
+    }
+    Array.from(includeSet).sort().forEach(inc => lines.push(inc));
+
     lines.push('#include <memory>');
     lines.push('#include <vector>');
     lines.push('');
@@ -116,15 +243,8 @@ export class CodeGenerator {
     } else {
       for (const comp of topComps) {
         const varName = this.sanitizeVarName(comp.id);
-        if (comp.type === 'RogueBox') {
-          lines.push(`    std::unique_ptr<Panel> ${varName};`);
-        } else if (comp.type === 'PixelText') {
-          lines.push(`    std::unique_ptr<Text> ${varName};`);
-        } else if (comp.type === 'TouchButton') {
-          lines.push(`    std::unique_ptr<Button> ${varName};`);
-        } else {
-          lines.push(`    std::unique_ptr<Panel> ${varName};`);
-        }
+        const exp = this.getExporter(comp.type);
+        lines.push(`    ${exp.getMember(comp, varName)}`);
       }
     }
 
@@ -136,15 +256,8 @@ export class CodeGenerator {
     } else {
       for (const comp of bottomComps) {
         const varName = this.sanitizeVarName(comp.id);
-        if (comp.type === 'RogueBox') {
-          lines.push(`    std::unique_ptr<Panel> ${varName};`);
-        } else if (comp.type === 'PixelText') {
-          lines.push(`    std::unique_ptr<Text> ${varName};`);
-        } else if (comp.type === 'TouchButton') {
-          lines.push(`    std::unique_ptr<Button> ${varName};`);
-        } else {
-          lines.push(`    std::unique_ptr<Panel> ${varName};`);
-        }
+        const exp = this.getExporter(comp.type);
+        lines.push(`    ${exp.getMember(comp, varName)}`);
       }
     }
 
@@ -187,7 +300,10 @@ export class CodeGenerator {
     lines.push('    // 1. TOP SCREEN (400x240)');
     lines.push('    // ----------------------------------------------------');
     for (const comp of topComps) {
-      this.writeComponentInit(lines, comp);
+      const varName = this.sanitizeVarName(comp.id);
+      const exp = this.getExporter(comp.type);
+      const initLines = exp.getInitialization(comp, varName);
+      initLines.forEach(l => lines.push(l));
     }
 
     lines.push('');
@@ -196,7 +312,10 @@ export class CodeGenerator {
     lines.push('    // 2. BOTTOM SCREEN (320x240)');
     lines.push('    // ----------------------------------------------------');
     for (const comp of bottomComps) {
-      this.writeComponentInit(lines, comp);
+      const varName = this.sanitizeVarName(comp.id);
+      const exp = this.getExporter(comp.type);
+      const initLines = exp.getInitialization(comp, varName);
+      initLines.forEach(l => lines.push(l));
     }
 
     lines.push('}');
@@ -211,57 +330,33 @@ export class CodeGenerator {
     lines.push('');
     lines.push(`void ${screenName}::drawTop(Renderer2D& renderer) {`);
 
-    const topBg = screenData.top?.backgroundColor ? this.hexColorToUint32(screenData.top.backgroundColor) : '0xFF12141C';
+    const topBg = screenData.top?.backgroundColor ? this.hexColorToUint32(screenData.top.backgroundColor) : '0xFF1C1412';
     lines.push(`    renderer.clear(${topBg});`);
 
     for (const comp of topComps) {
       if (comp.visible === false) continue;
       const varName = this.sanitizeVarName(comp.id);
-      lines.push(`    if (${varName}) ${varName}->draw(renderer);`);
+      const exp = this.getExporter(comp.type);
+      lines.push(exp.getDrawCall(comp, varName));
     }
 
     lines.push('}');
     lines.push('');
     lines.push(`void ${screenName}::drawBottom(Renderer2D& renderer) {`);
 
-    const bottomBg = screenData.bottom?.backgroundColor ? this.hexColorToUint32(screenData.bottom.backgroundColor) : '0xFF1A1824';
+    const bottomBg = screenData.bottom?.backgroundColor ? this.hexColorToUint32(screenData.bottom.backgroundColor) : '0xFF24181A';
     lines.push(`    renderer.clear(${bottomBg});`);
 
     for (const comp of bottomComps) {
       if (comp.visible === false) continue;
       const varName = this.sanitizeVarName(comp.id);
-      lines.push(`    if (${varName}) ${varName}->draw(renderer);`);
+      const exp = this.getExporter(comp.type);
+      lines.push(exp.getDrawCall(comp, varName));
     }
 
     lines.push('}');
     lines.push('');
 
     return lines.join('\n');
-  }
-
-  static writeComponentInit(lines, comp) {
-    const varName = this.sanitizeVarName(comp.id);
-    const x = `${comp.x}.0f`;
-    const y = `${comp.y}.0f`;
-    const w = `${comp.width}.0f`;
-    const h = `${comp.height}.0f`;
-    const props = comp.properties || {};
-
-    if (comp.type === 'RogueBox') {
-      const bg = this.hexColorToUint32(props.backgroundColor || '#1e2230');
-      const border = this.hexColorToUint32(props.borderColor || '#c83834');
-      lines.push(`    ${varName} = std::make_unique<Panel>(${x}, ${y}, ${w}, ${h}, PanelStyle::ROGUE_BOX);`);
-      lines.push(`    ${varName}->backgroundColor = ${bg};`);
-      lines.push(`    ${varName}->borderColor = ${border};`);
-    } else if (comp.type === 'PixelText') {
-      const text = this.escapeString(props.text || '');
-      const color = this.hexColorToUint32(props.color || '#ffffff');
-      lines.push(`    ${varName} = std::make_unique<Text>(${x}, ${y}, "${text}", ${color}, true);`);
-    } else if (comp.type === 'TouchButton') {
-      const label = this.escapeString(props.label || 'BUTTON');
-      const focusId = Number.isInteger(props.focusId) ? props.focusId : 0;
-      lines.push(`    ${varName} = std::make_unique<Button>(${x}, ${y}, ${w}, ${h}, "${label}", ${focusId});`);
-      lines.push(`    m_focus_manager.addElement(${varName}.get());`);
-    }
   }
 }

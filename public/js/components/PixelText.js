@@ -1,9 +1,27 @@
 import { BaseComponent } from './BaseComponent.js';
+import { Props } from '../core/PropertySystem.js';
 
 /**
  * PixelText - Crisp pixelated text display matching 3DS bitmap font rendering.
  */
 export class PixelText extends BaseComponent {
+  static schema = {
+    type: 'PixelText',
+    displayName: 'Pixel Text',
+    category: 'Typography',
+    icon: '🔤',
+    description: 'Crisp bitmap font text element with drop shadow for 3DS readability',
+    capabilities: ['render', 'text'],
+    properties: {
+      text: Props.string('Text Content', 'Sample Text', { category: 'Content' }),
+      fontSize: Props.integer('Font Size', 14, { min: 8, max: 64, category: 'Typography' }),
+      align: Props.enum('Alignment', ['left', 'center', 'right'], 'left', { category: 'Typography' }),
+      color: Props.color('Text Color', '#ffffff', { category: 'Style' }),
+      shadow: Props.boolean('Text Shadow', true, { category: 'Style' }),
+      shadowColor: Props.color('Shadow Color', '#000000', { category: 'Style' })
+    }
+  };
+
   constructor(data = {}) {
     super({
       ...data,
@@ -13,20 +31,8 @@ export class PixelText extends BaseComponent {
     });
   }
 
-  getDefaultProperties() {
-    return {
-      text: 'Sample Text',
-      fontSize: 14,
-      fontFamily: 'monospace',
-      color: '#ffffff',
-      shadowColor: '#101010',
-      shadow: true,
-      align: 'left' // 'left' | 'center' | 'right'
-    };
-  }
-
   draw(ctx, options = {}) {
-    const { text, fontSize, fontFamily, color, shadowColor, shadow, align } = this.properties;
+    const { text, fontSize, color, shadowColor, shadow, align } = this.properties;
     const str = String(text ?? '');
     const fs = Math.max(8, Math.min(64, fontSize || 14));
     const font = `${fs}px "Courier New", monospace`;

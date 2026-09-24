@@ -1,20 +1,29 @@
 /**
- * Validator - Validates 3DS UI project, screens, components, bounds, and layout rules.
+ * Validator - Categorized 3DS UI Validator.
+ * Evaluates Structure, Layout, Input, and Performance constraints for Nintendo 3DS hardware.
  */
 export class Validator {
   /**
    * Validate a single screen and its components.
    * @param {Object} screen 
-   * @returns {{ valid: boolean, errors: Array<{ level: 'error'|'warn', componentId?: string, property?: string, value?: any, message: string }> }}
+   * @returns {{ valid: boolean, errors: Array<{ category: string, level: 'error'|'warn', componentId?: string, property?: string, value?: any, message: string }> }}
    */
   static validateScreen(screen) {
     const issues = [];
     if (!screen) {
-      return { valid: false, errors: [{ level: 'error', message: 'Screen is undefined or null' }] };
+      return {
+        valid: false,
+        errors: [{ category: 'Structure', level: 'error', message: 'Screen is undefined or null' }]
+      };
     }
 
     if (!screen.id || typeof screen.id !== 'string') {
-      issues.push({ level: 'error', property: 'id', message: 'Screen ID must be a non-empty string' });
+      issues.push({
+        category: 'Structure',
+        level: 'error',
+        property: 'id',
+        message: 'Screen ID must be a non-empty string'
+      });
     }
 
     const topWidth = screen.top?.width || 400;
@@ -25,10 +34,20 @@ export class Validator {
     const seenIds = new Set();
     const components = screen.components || [];
 
+    // --- Performance budget check ---
+    if (components.length > 40) {
+      issues.push({
+        category: 'Performance',
+        level: 'warn',
+        message: `Screen contains ${components.length} elements. High element counts may impact ARM11 60 FPS performance on Nintendo 3DS.`
+      });
+    }
+
     for (const comp of components) {
-      // 1. ID checks
+      // 1. Structure: ID checks
       if (!comp.id || typeof comp.id !== 'string' || !comp.id.trim()) {
         issues.push({
+          category: 'Structure',
           level: 'error',
           componentId: '(unknown)',
           property: 'id',
@@ -36,6 +55,7 @@ export class Validator {
         });
       } else if (seenIds.has(comp.id)) {
         issues.push({
+          category: 'Structure',
           level: 'error',
           componentId: comp.id,
           property: 'id',
@@ -46,9 +66,10 @@ export class Validator {
         seenIds.add(comp.id);
       }
 
-      // 2. Screen target check
+      // 2. Structure: Target screen
       if (comp.screen !== 'top' && comp.screen !== 'bottom') {
         issues.push({
+          category: 'Structure',
           level: 'error',
           componentId: comp.id,
           property: 'screen',
@@ -57,9 +78,10 @@ export class Validator {
         });
       }
 
-      // 3. Integer coordinates check (Pixel snapping rule)
+      // 3. Layout: Integer pixel snapping check
       if (!Number.isInteger(comp.x)) {
         issues.push({
+          category: 'Layout',
           level: 'warn',
           componentId: comp.id,
           property: 'x',
@@ -69,6 +91,7 @@ export class Validator {
       }
       if (!Number.isInteger(comp.y)) {
         issues.push({
+          category: 'Layout',
           level: 'warn',
           componentId: comp.id,
           property: 'y',
@@ -77,33 +100,36 @@ export class Validator {
         });
       }
 
-      // 4. Dimensions check
+      // 4. Layout: Dimensions
       if (comp.width <= 0) {
         issues.push({
+          category: 'Layout',
           level: 'error',
           componentId: comp.id,
           property: 'width',
           value: comp.width,
-          message: `Width must be greater than 0.`
+          message: 'Width must be greater than 0.'
         });
       }
       if (comp.height <= 0) {
         issues.push({
+          category: 'Layout',
           level: 'error',
           componentId: comp.id,
           property: 'height',
           value: comp.height,
-          message: `Height must be greater than 0.`
+          message: 'Height must be greater than 0.'
         });
       }
 
-      // 5. 3DS Display boundaries check
+      // 5. Layout: 3DS Display boundaries check
       const maxW = comp.screen === 'top' ? topWidth : bottomWidth;
       const maxH = comp.screen === 'top' ? topHeight : bottomHeight;
       const screenLabel = comp.screen === 'top' ? `Top screen (${maxW}x${maxH})` : `Bottom screen (${maxW}x${maxH})`;
 
       if (comp.x < 0) {
         issues.push({
+          category: 'Layout',
           level: 'warn',
           componentId: comp.id,
           property: 'x',
@@ -113,6 +139,7 @@ export class Validator {
       }
       if (comp.y < 0) {
         issues.push({
+          category: 'Layout',
           level: 'warn',
           componentId: comp.id,
           property: 'y',
@@ -122,6 +149,7 @@ export class Validator {
       }
       if (comp.x + comp.width > maxW) {
         issues.push({
+          category: 'Layout',
           level: 'warn',
           componentId: comp.id,
           property: 'x + width',
@@ -131,6 +159,7 @@ export class Validator {
       }
       if (comp.y + comp.height > maxH) {
         issues.push({
+          category: 'Layout',
           level: 'warn',
           componentId: comp.id,
           property: 'y + height',
@@ -139,25 +168,46 @@ export class Validator {
         });
       }
 
-      // 6. Parent reference check
+      // 6. Structure: Parent references & cycle detection
       if (comp.parent) {
         const parentComp = components.find(c => c.id === comp.parent);
         if (!parentComp) {
           issues.push({
+            category: 'Structure',
             level: 'error',
             componentId: comp.id,
             property: 'parent',
             value: comp.parent,
             message: `Broken parent reference: Parent "${comp.parent}" does not exist in this screen.`
           });
-        } else if (parentComp.screen !== comp.screen) {
-          issues.push({
-            level: 'error',
-            componentId: comp.id,
-            property: 'parent',
-            value: comp.parent,
-            message: `Parent "${comp.parent}" is on screen "${parentComp.screen}" while child is on "${comp.screen}".`
-          });
+        } else {
+          if (parentComp.screen !== comp.screen) {
+            issues.push({
+              category: 'Structure',
+              level: 'error',
+              componentId: comp.id,
+              property: 'parent',
+              value: comp.parent,
+              message: `Parent "${comp.parent}" is on screen "${parentComp.screen}" while child is on "${comp.screen}".`
+            });
+          }
+
+          // Cycle check
+          let curr = parentComp;
+          let depth = 0;
+          while (curr && depth++ < 50) {
+            if (curr.id === comp.id) {
+              issues.push({
+                category: 'Structure',
+                level: 'error',
+                componentId: comp.id,
+                property: 'parent',
+                message: `Circular parent hierarchy detected involving "${comp.id}".`
+              });
+              break;
+            }
+            curr = components.find(c => c.id === curr.parent);
+          }
         }
       }
     }

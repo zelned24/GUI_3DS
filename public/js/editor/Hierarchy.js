@@ -1,18 +1,24 @@
 /**
- * Hierarchy - Screen component tree, layers view, reordering, and element management.
+ * Hierarchy - Screen component & node tree view supporting true recursive nesting,
+ * layer visibility toggles, reordering, and element management.
  */
 export class Hierarchy {
   constructor(containerElement, projectModel, selectionManager) {
     this.container = containerElement;
     this.model = projectModel;
     this.selection = selectionManager;
+    this.collapsedNodes = new Set();
 
     this._setupSubscriptions();
   }
 
   _setupSubscriptions() {
-    this.model.subscribe(() => {
-      this.render();
+    this.model.subscribe((type) => {
+      if (type !== 'componentUpdated') {
+        this.render();
+      } else {
+        this._updateSelectionHighlight();
+      }
     });
 
     this.selection.subscribe(() => {
@@ -27,35 +33,36 @@ export class Hierarchy {
       return;
     }
 
-    const topComps = screen.components.filter(c => c.screen === 'top');
-    const bottomComps = screen.components.filter(c => c.screen === 'bottom');
+    const topRoots = this.model.getRootNodes('top');
+    const bottomRoots = this.model.getRootNodes('bottom');
 
     let html = `
       <div class="hierarchy-tree">
         <div class="tree-root-item">
           <span class="icon">📺</span>
           <span class="label font-bold">${screen.name || screen.id}</span>
+          <span style="margin-left: auto; font-size: 10px; color: var(--text-dim);">v${screen.schemaVersion || 1}</span>
         </div>
 
         <!-- TOP SCREEN FOLDER -->
         <div class="tree-group">
           <div class="tree-group-header">
-            <span class="tag-top">TOP SCREEN</span>
-            <span class="count">${topComps.length}</span>
+            <span class="tag-top">TOP SCREEN (400×240)</span>
+            <span class="count">${screen.components.filter(c => c.screen === 'top').length}</span>
           </div>
           <div class="tree-list" id="tree_top_list">
-            ${this._renderComponentList(topComps)}
+            ${topRoots.length > 0 ? topRoots.map(r => this._renderNodeBranch(r, 0)).join('') : '<div class="tree-empty-item">(No elements)</div>'}
           </div>
         </div>
 
         <!-- BOTTOM SCREEN FOLDER -->
         <div class="tree-group">
           <div class="tree-group-header">
-            <span class="tag-bottom">BOTTOM (TOUCH)</span>
-            <span class="count">${bottomComps.length}</span>
+            <span class="tag-bottom">BOTTOM TOUCH (320×240)</span>
+            <span class="count">${screen.components.filter(c => c.screen === 'bottom').length}</span>
           </div>
           <div class="tree-list" id="tree_bottom_list">
-            ${this._renderComponentList(bottomComps)}
+            ${bottomRoots.length > 0 ? bottomRoots.map(r => this._renderNodeBranch(r, 0)).join('') : '<div class="tree-empty-item">(No elements)</div>'}
           </div>
         </div>
       </div>
@@ -66,49 +73,73 @@ export class Hierarchy {
     this._updateSelectionHighlight();
   }
 
-  _renderComponentList(comps) {
-    if (comps.length === 0) {
-      return `<div class="tree-empty-item">(No elements)</div>`;
-    }
+  /**
+   * Recursively renders a node and its nested children with depth indentation.
+   */
+  _renderNodeBranch(node, depth = 0) {
+    const isVisible = node.visible !== false;
+    const hasChildren = node.children && node.children.length > 0;
+    const isCollapsed = this.collapsedNodes.has(node.id);
+    const indentPx = depth * 14;
 
-    // Display in reverse z-index (top layers at the top of the tree view)
-    const sorted = [...comps].sort((a, b) => (b.zIndex || 0) - (a.zIndex || 0));
+    const typeIcons = {
+      RogueBox: '🔲',
+      PixelText: '🔤',
+      TouchButton: '🔘'
+    };
+    const icon = typeIcons[node.type] || '📦';
 
-    return sorted.map(comp => {
-      const typeIcons = {
-        RogueBox: '🔲',
-        PixelText: '🔤',
-        TouchButton: '🔘'
-      };
-      const icon = typeIcons[comp.type] || '📦';
-      const isVisible = comp.visible !== false;
+    let html = `
+      <div class="tree-item-branch" data-id="${node.id}">
+        <div class="tree-item" data-id="${node.id}" style="padding-left: ${8 + indentPx}px;">
+          ${hasChildren ? `
+            <span class="tree-expander ${isCollapsed ? 'collapsed' : ''}" data-toggle="${node.id}">
+              ${isCollapsed ? '▶' : '▼'}
+            </span>
+          ` : `<span class="tree-spacer" style="width: 12px; display: inline-block;"></span>`}
 
-      return `
-        <div class="tree-item" data-id="${comp.id}">
           <span class="item-visibility ${isVisible ? 'vis-on' : 'vis-off'}" title="Toggle visibility">
             ${isVisible ? '👁' : '🚫'}
           </span>
           <span class="item-icon">${icon}</span>
-          <span class="item-name" title="${comp.id}">${comp.id}</span>
-          <span class="item-badge">${comp.type}</span>
+          <span class="item-name" title="${node.id}">${node.name || node.id}</span>
+          <span class="item-badge">${node.type}</span>
           <div class="item-actions">
             <button class="btn-tree-action" data-action="up" title="Move layer up">▲</button>
             <button class="btn-tree-action" data-action="down" title="Move layer down">▼</button>
             <button class="btn-tree-action btn-tree-del" data-action="delete" title="Delete element">✕</button>
           </div>
         </div>
-      `;
-    }).join('');
+    `;
+
+    // Render children if expanded
+    if (hasChildren && !isCollapsed) {
+      html += `<div class="tree-children-container">`;
+      for (const childId of node.children) {
+        const childNode = this.model.getComponent(childId);
+        if (childNode) {
+          html += this._renderNodeBranch(childNode, depth + 1);
+        }
+      }
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+    return html;
   }
 
   _attachEvents() {
+    // Selection on click
     const items = this.container.querySelectorAll('.tree-item');
     items.forEach(el => {
       const id = el.getAttribute('data-id');
 
-      // Selection on click
       el.addEventListener('click', (e) => {
-        if (e.target.closest('.item-actions') || e.target.closest('.item-visibility')) return;
+        if (
+          e.target.closest('.item-actions') || 
+          e.target.closest('.item-visibility') || 
+          e.target.closest('.tree-expander')
+        ) return;
         this.selection.select(id, e.shiftKey);
       });
 
@@ -139,6 +170,21 @@ export class Hierarchy {
             this.selection.deselect(id);
           }
         });
+      });
+    });
+
+    // Expand / Collapse toggles
+    const expanders = this.container.querySelectorAll('.tree-expander');
+    expanders.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const targetId = btn.getAttribute('data-toggle');
+        if (this.collapsedNodes.has(targetId)) {
+          this.collapsedNodes.delete(targetId);
+        } else {
+          this.collapsedNodes.add(targetId);
+        }
+        this.render();
       });
     });
   }

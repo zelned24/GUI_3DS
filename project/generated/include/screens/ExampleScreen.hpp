@@ -1,10 +1,10 @@
 #pragma once
 
 #include "screens/screen.hpp"
-#include "ui/panel.hpp"
 #include "ui/button.hpp"
-#include "ui/text.hpp"
 #include "ui/focus_manager.hpp"
+#include "ui/panel.hpp"
+#include "ui/text.hpp"
 #include <memory>
 #include <vector>
 

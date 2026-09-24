@@ -1,9 +1,31 @@
 import { BaseComponent } from './BaseComponent.js';
+import { Props } from '../core/PropertySystem.js';
 
 /**
  * TouchButton - Interactive 3DS touch button with normal, focused, and pressed states.
  */
 export class TouchButton extends BaseComponent {
+  static schema = {
+    type: 'TouchButton',
+    displayName: 'Touch Button',
+    category: 'Interactive',
+    icon: '🔘',
+    description: 'Interactive button for touch screen or D-pad FocusManager navigation',
+    capabilities: ['render', 'focus', 'touch', 'input'],
+    properties: {
+      label: Props.string('Label', 'BUTTON', { category: 'Content' }),
+      action: Props.action('Action Trigger', 'ACTION_TRIGGER', { category: 'Interaction' }),
+      focusId: Props.integer('Focus ID', 0, { min: 0, category: 'Interaction' }),
+      backgroundColor: Props.color('Normal Background', '#2b3040', { category: 'Style' }),
+      focusedColor: Props.color('Focused Background', '#404c66', { category: 'Style' }),
+      pressedColor: Props.color('Pressed Background', '#1a1d26', { category: 'Style' }),
+      borderColor: Props.color('Border Color', '#e84545', { category: 'Style' }),
+      textColor: Props.color('Text Color', '#ffffff', { category: 'Style' }),
+      fontSize: Props.integer('Font Size', 14, { min: 8, max: 32, category: 'Typography' }),
+      borderRadius: Props.integer('Border Radius', 4, { min: 0, max: 16, category: 'Style' })
+    }
+  };
+
   constructor(data = {}) {
     super({
       ...data,
@@ -11,21 +33,6 @@ export class TouchButton extends BaseComponent {
       width: Math.round(data.width ?? 140),
       height: Math.round(data.height ?? 36)
     });
-  }
-
-  getDefaultProperties() {
-    return {
-      label: 'BUTTON',
-      action: 'ACTION_TRIGGER',
-      focusId: 0,
-      backgroundColor: '#2b3040',
-      focusedColor: '#404c66',
-      pressedColor: '#1a1d26',
-      borderColor: '#e84545',
-      textColor: '#ffffff',
-      fontSize: 14,
-      borderRadius: 4
-    };
   }
 
   draw(ctx, options = {}) {

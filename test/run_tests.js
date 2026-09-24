@@ -7,6 +7,9 @@ import { ComponentRegistry } from '../public/js/components/ComponentRegistry.js'
 import { ProjectModel } from '../public/js/core/ProjectModel.js';
 import { Validator } from '../public/js/core/Validator.js';
 import { CodeGenerator } from '../public/js/generator/CodeGenerator.js';
+import { UINode } from '../public/js/core/UINode.js';
+import { Transform } from '../public/js/core/Transform.js';
+import { Props, PropertyTypes } from '../public/js/core/PropertySystem.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -55,10 +58,102 @@ test('Component factory enforces integer pixel snapping on creation', () => {
   assert.strictEqual(comp.height, 80);
 });
 
+test('ComponentRegistry provides static schemas and capabilities', () => {
+  const boxSchema = ComponentRegistry.getSchema('RogueBox');
+  assert.ok(boxSchema);
+  assert.strictEqual(boxSchema.type, 'RogueBox');
+  assert.ok(boxSchema.capabilities.includes('render'));
+  assert.ok(boxSchema.capabilities.includes('container'));
+  assert.ok(boxSchema.properties.backgroundColor);
+
+  const btnSchema = ComponentRegistry.getSchema('TouchButton');
+  assert.ok(btnSchema.capabilities.includes('focus'));
+  assert.ok(btnSchema.capabilities.includes('touch'));
+});
+
 // -------------------------------------------------------------
-// 2. PROJECT MODEL, CRUD & UNDO/REDO TESTS
+// 2. TRANSFORM & UINODE HIERARCHY TESTS
 // -------------------------------------------------------------
-test('ProjectModel loads screen JSON and creates component instances', () => {
+test('Transform quantization for Nintendo 3DS Citro2D', () => {
+  const t = new Transform({
+    x: 12.3,
+    y: 45.8,
+    width: 120.2,
+    height: 40.7,
+    scaleX: 1.5,
+    rotation: 90,
+    opacity: 0.8
+  });
+  const q = t.getQuantized3DSTransform();
+  assert.strictEqual(q.x, 12);
+  assert.strictEqual(q.y, 46);
+  assert.strictEqual(q.width, 120);
+  assert.strictEqual(q.height, 41);
+  assert.strictEqual(q.rotation, 90);
+  assert.strictEqual(q.opacity, 0.8);
+});
+
+test('UINode hierarchical world transform computation', () => {
+  const model = new ProjectModel();
+  model.loadScreen({
+    id: 'HierarchyScreen',
+    top: { width: 400, height: 240 },
+    bottom: { width: 320, height: 240 },
+    components: []
+  });
+  model.setActiveScreen('HierarchyScreen');
+
+  const parentBox = model.addComponent({
+    id: 'parent_panel',
+    type: 'RogueBox',
+    screen: 'top',
+    x: 40,
+    y: 30,
+    width: 200,
+    height: 100
+  });
+
+  const childText = model.addComponent({
+    id: 'child_label',
+    type: 'PixelText',
+    screen: 'top',
+    x: 10,
+    y: 15,
+    width: 80,
+    height: 20,
+    parent: 'parent_panel'
+  });
+
+  assert.strictEqual(parentBox.children.includes('child_label'), true);
+  assert.strictEqual(childText.parent, 'parent_panel');
+
+  const worldTransform = childText.getWorldTransform(model);
+  assert.strictEqual(worldTransform.x, 50); // 40 + 10
+  assert.strictEqual(worldTransform.y, 45); // 30 + 15
+});
+
+// -------------------------------------------------------------
+// 3. PROPERTY SYSTEM TESTS
+// -------------------------------------------------------------
+test('PropertySystem validates and sanitizes typed values', () => {
+  const intProp = Props.integer('Count', 5, { min: 0, max: 10 });
+  assert.strictEqual(intProp.sanitize('7'), 7);
+  assert.strictEqual(intProp.sanitize('20'), 10); // max clamp
+  assert.strictEqual(intProp.sanitize('-5'), 0); // min clamp
+
+  const colorProp = Props.color('Color', '#1e2230');
+  assert.strictEqual(colorProp.sanitize('#c83834'), '#c83834');
+  assert.strictEqual(colorProp.sanitize('invalid-color'), '#1e2230');
+
+  const enumProp = Props.enum('Mode', ['left', 'center', 'right'], 'left');
+  assert.strictEqual(enumProp.sanitize('center'), 'center');
+  assert.strictEqual(enumProp.sanitize('unknown'), 'left');
+});
+
+// -------------------------------------------------------------
+// 4. PROJECT MODEL, CRUD, REPARENTING & UNDO/REDO
+// -------------------------------------------------------------
+test('ProjectModel loads screen JSON and creates component instances with schema v1', () => {
   const model = new ProjectModel();
   const screenJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'project', 'screens', 'ExampleScreen.json'), 'utf8'));
   model.loadScreen(screenJson);
@@ -70,55 +165,40 @@ test('ProjectModel loads screen JSON and creates component instances', () => {
   assert.strictEqual(active.bottom.width, 320);
 });
 
-test('ProjectModel add, update, duplicate, and undo/redo operations', () => {
+test('ProjectModel reparentNode safely updates parent-child links and supports undo/redo', () => {
   const model = new ProjectModel();
   model.loadScreen({
-    id: 'TestScreen',
+    id: 'ReparentScreen',
     top: { width: 400, height: 240 },
     bottom: { width: 320, height: 240 },
     components: []
   });
-  model.setActiveScreen('TestScreen');
+  model.setActiveScreen('ReparentScreen');
 
-  // Add component
-  const comp = model.addComponent({
-    type: 'TouchButton',
-    screen: 'bottom',
-    x: 10,
-    y: 20,
-    width: 100,
-    height: 30
-  });
-  assert.strictEqual(model.getActiveScreen().components.length, 1);
-  assert.strictEqual(comp.x, 10);
+  const box = model.addComponent({ id: 'box_a', type: 'RogueBox', screen: 'top', x: 20, y: 20, width: 100, height: 100 });
+  const text = model.addComponent({ id: 'text_a', type: 'PixelText', screen: 'top', x: 5, y: 5, width: 50, height: 20 });
 
-  // Update component position
-  model.updateComponent(comp.id, { x: 55, y: 88 });
-  assert.strictEqual(comp.x, 55);
-  assert.strictEqual(comp.y, 88);
+  assert.strictEqual(text.parent, null);
+  assert.strictEqual(box.children.length, 0);
 
-  // Undo update
+  // Reparent text under box
+  model.reparentNode('text_a', 'box_a');
+  assert.strictEqual(text.parent, 'box_a');
+  assert.strictEqual(box.children.includes('text_a'), true);
+
+  // Undo reparenting
   model.history.undo();
-  assert.strictEqual(comp.x, 10);
-  assert.strictEqual(comp.y, 20);
+  assert.strictEqual(text.parent, null);
+  assert.strictEqual(box.children.includes('text_a'), false);
 
-  // Redo update
+  // Redo reparenting
   model.history.redo();
-  assert.strictEqual(comp.x, 55);
-  assert.strictEqual(comp.y, 88);
-
-  // Duplicate component
-  const dupe = model.duplicateComponent(comp.id);
-  assert.strictEqual(model.getActiveScreen().components.length, 2);
-  assert.ok(dupe.id.includes('copy'));
-
-  // Remove component
-  model.removeComponent(dupe.id);
-  assert.strictEqual(model.getActiveScreen().components.length, 1);
+  assert.strictEqual(text.parent, 'box_a');
+  assert.strictEqual(box.children.includes('text_a'), true);
 });
 
 // -------------------------------------------------------------
-// 3. VALIDATOR TESTS
+// 5. VALIDATOR TESTS
 // -------------------------------------------------------------
 test('Validator approves valid ExampleScreen', () => {
   const screenJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'project', 'screens', 'ExampleScreen.json'), 'utf8'));
@@ -146,9 +226,9 @@ test('Validator catches duplicate ID and broken parent references', () => {
 });
 
 // -------------------------------------------------------------
-// 4. CODE GENERATOR (GOLDEN REGRESSION TEST)
+// 6. CODE GENERATOR (MODULAR EXPORTER & GOLDEN REGRESSION TEST)
 // -------------------------------------------------------------
-test('CodeGenerator produces deterministic C++ header and source for 3DS', () => {
+test('CodeGenerator produces deterministic C++ header and source using Exporter contracts', () => {
   const screenJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'project', 'screens', 'ExampleScreen.json'), 'utf8'));
   const gen1 = CodeGenerator.generate(screenJson);
   const gen2 = CodeGenerator.generate(screenJson);

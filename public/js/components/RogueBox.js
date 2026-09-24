@@ -1,9 +1,26 @@
 import { BaseComponent } from './BaseComponent.js';
+import { Props } from '../core/PropertySystem.js';
 
 /**
  * RogueBox - PokéRogue-style styled frame / panel for 3DS.
  */
 export class RogueBox extends BaseComponent {
+  static schema = {
+    type: 'RogueBox',
+    displayName: 'Rogue Box',
+    category: 'Containers',
+    icon: '🔲',
+    description: 'PokéRogue-style styled container frame for Nintendo 3DS',
+    capabilities: ['render', 'container'],
+    properties: {
+      backgroundColor: Props.color('Background Color', '#1e2230', { category: 'Style' }),
+      borderColor: Props.color('Border Color', '#c83834', { category: 'Style' }),
+      borderWidth: Props.integer('Border Width', 2, { min: 0, max: 16, category: 'Style' }),
+      borderRadius: Props.integer('Corner Radius', 4, { min: 0, max: 24, category: 'Style' }),
+      shadow: Props.boolean('Drop Shadow', true, { category: 'Style' })
+    }
+  };
+
   constructor(data = {}) {
     super({
       ...data,
@@ -13,22 +30,12 @@ export class RogueBox extends BaseComponent {
     });
   }
 
-  getDefaultProperties() {
-    return {
-      backgroundColor: '#1e2230',
-      borderColor: '#c83834',
-      borderWidth: 2,
-      borderRadius: 4,
-      shadow: true
-    };
-  }
-
   draw(ctx, options = {}) {
     const { backgroundColor, borderColor, borderWidth, borderRadius, shadow } = this.properties;
     const w = this.width;
     const h = this.height;
-    const radius = Math.max(0, Math.min(borderRadius || 0, Math.min(w, h) / 2));
-    const bw = Math.max(1, borderWidth || 2);
+    const radius = Math.max(0, Math.min(borderRadius ?? 0, Math.min(w, h) / 2));
+    const bw = Math.max(0, borderWidth ?? 2);
 
     // Subtle drop shadow if enabled
     if (shadow) {
@@ -38,9 +45,11 @@ export class RogueBox extends BaseComponent {
     }
 
     // Outer border / bevel
-    ctx.fillStyle = borderColor || '#c83834';
-    this._roundRect(ctx, 0, 0, w, h, radius);
-    ctx.fill();
+    if (bw > 0) {
+      ctx.fillStyle = borderColor || '#c83834';
+      this._roundRect(ctx, 0, 0, w, h, radius);
+      ctx.fill();
+    }
 
     // Inner background
     if (w > bw * 2 && h > bw * 2) {

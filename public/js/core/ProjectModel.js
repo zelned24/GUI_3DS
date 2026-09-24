@@ -3,7 +3,8 @@ import { HistoryManager } from './HistoryManager.js';
 import { Validator } from './Validator.js';
 
 /**
- * ProjectModel - Declarative project and screen state manager.
+ * ProjectModel - Hierarchical project and screen state manager.
+ * Supports N-ary Node trees, schema versioning (v1), undo/redo, and safe serialization.
  */
 export class ProjectModel {
   constructor() {
@@ -11,6 +12,7 @@ export class ProjectModel {
     this.listeners = [];
 
     this.project = {
+      schemaVersion: 1,
       name: 'Rogue3DS',
       version: '1.0.0',
       target: 'Nintendo 3DS',
@@ -43,8 +45,20 @@ export class ProjectModel {
 
   loadScreen(screenData) {
     if (!screenData || !screenData.id) return;
+    
+    // Instantiate nodes
     const comps = (screenData.components || []).map(c => ComponentRegistry.create(c.type, c));
+
+    // Rebuild bidirectional parent-child links
+    const nodeMap = new Map(comps.map(c => [c.id, c]));
+    for (const node of comps) {
+      if (node.parent && nodeMap.has(node.parent)) {
+        nodeMap.get(node.parent).addChild(node.id);
+      }
+    }
+
     const normalized = {
+      schemaVersion: screenData.schemaVersion || 1,
       id: screenData.id,
       name: screenData.name || screenData.id,
       top: {
@@ -59,6 +73,7 @@ export class ProjectModel {
       },
       components: comps
     };
+
     this.screensMap.set(normalized.id, normalized);
     if (!this.project.screens.includes(normalized.id)) {
       this.project.screens.push(normalized.id);
@@ -72,6 +87,7 @@ export class ProjectModel {
       throw new Error(`Screen with ID "${id}" already exists`);
     }
     const newScreen = {
+      schemaVersion: 1,
       id,
       name: name || id,
       top: { width: 400, height: 240, backgroundColor: '#12141c' },
@@ -93,6 +109,18 @@ export class ProjectModel {
     return screen.components.find(c => c.id === componentId) || null;
   }
 
+  /**
+   * Returns root-level nodes (nodes without a parent).
+   */
+  getRootNodes(screenType = null) {
+    const screen = this.getActiveScreen();
+    if (!screen) return [];
+    return screen.components.filter(c => {
+      const matchScreen = !screenType || c.screen === screenType;
+      return matchScreen && (!c.parent || !this.getComponent(c.parent));
+    });
+  }
+
   addComponent(componentData, recordHistory = true) {
     const screen = this.getActiveScreen();
     if (!screen) return null;
@@ -100,12 +128,6 @@ export class ProjectModel {
     const comp = componentData instanceof Object && componentData.type
       ? (componentData.render ? componentData : ComponentRegistry.create(componentData.type, componentData))
       : ComponentRegistry.create('RogueBox', componentData);
-
-    // Ensure integer pixel snapping
-    comp.x = Math.round(comp.x);
-    comp.y = Math.round(comp.y);
-    comp.width = Math.round(comp.width);
-    comp.height = Math.round(comp.height);
 
     // Auto-assign unique ID if duplicated
     let baseId = comp.id;
@@ -115,6 +137,12 @@ export class ProjectModel {
     }
 
     screen.components.push(comp);
+
+    // If node specifies a parent, update parent's children array
+    if (comp.parent) {
+      const parentNode = this.getComponent(comp.parent);
+      if (parentNode) parentNode.addChild(comp.id);
+    }
 
     if (recordHistory) {
       this.history.push({
@@ -129,6 +157,7 @@ export class ProjectModel {
     }
 
     this.emitChange('componentAdded', { component: comp });
+    this.emitChange('hierarchyChanged', {});
     return comp;
   }
 
@@ -140,12 +169,36 @@ export class ProjectModel {
 
     const [removed] = screen.components.splice(index, 1);
 
+    // Detach from parent
+    if (removed.parent) {
+      const parentNode = this.getComponent(removed.parent);
+      if (parentNode) parentNode.removeChild(removed.id);
+    }
+
+    // Reparent orphaned children to removed node's parent
+    const orphanedChildren = screen.components.filter(c => c.parent === removed.id);
+    for (const child of orphanedChildren) {
+      child.parent = removed.parent;
+      if (removed.parent) {
+        const grandParent = this.getComponent(removed.parent);
+        if (grandParent) grandParent.addChild(child.id);
+      }
+    }
+
     if (recordHistory) {
       this.history.push({
         description: `Remove ${removed.type} (${removed.id})`,
         undo: () => {
           screen.components.splice(index, 0, removed);
+          if (removed.parent) {
+            const parentNode = this.getComponent(removed.parent);
+            if (parentNode) parentNode.addChild(removed.id);
+          }
+          for (const child of orphanedChildren) {
+            child.parent = removed.id;
+          }
           this.emitChange('componentAdded', { component: removed });
+          this.emitChange('hierarchyChanged', {});
         },
         execute: () => {
           this.removeComponent(removed.id, false);
@@ -154,6 +207,7 @@ export class ProjectModel {
     }
 
     this.emitChange('componentRemoved', { componentId, removed });
+    this.emitChange('hierarchyChanged', {});
     return removed;
   }
 
@@ -163,23 +217,37 @@ export class ProjectModel {
 
     const oldState = comp.toJSON();
 
-    // Apply updates with pixel snapping
+    // Position & dimensions with integer pixel snapping
     if (updates.x !== undefined) comp.x = Math.round(updates.x);
     if (updates.y !== undefined) comp.y = Math.round(updates.y);
-    if (updates.width !== undefined) comp.width = Math.max(4, Math.round(updates.width));
-    if (updates.height !== undefined) comp.height = Math.max(4, Math.round(updates.height));
+    if (updates.width !== undefined) comp.width = Math.max(1, Math.round(updates.width));
+    if (updates.height !== undefined) comp.height = Math.max(1, Math.round(updates.height));
+
+    // Spatial transform properties
+    if (updates.scaleX !== undefined) comp.transform.scaleX = parseFloat(updates.scaleX);
+    if (updates.scaleY !== undefined) comp.transform.scaleY = parseFloat(updates.scaleY);
+    if (updates.rotation !== undefined) comp.transform.rotation = parseFloat(updates.rotation);
+    if (updates.opacity !== undefined) comp.opacity = parseFloat(updates.opacity);
+
+    // Node attributes
+    if (updates.name !== undefined) comp.name = String(updates.name);
     if (updates.screen !== undefined) comp.screen = updates.screen;
     if (updates.visible !== undefined) comp.visible = Boolean(updates.visible);
     if (updates.enabled !== undefined) comp.enabled = Boolean(updates.enabled);
     if (updates.zIndex !== undefined) comp.zIndex = Math.round(updates.zIndex);
-    if (updates.parent !== undefined) comp.parent = updates.parent;
+
     if (updates.id !== undefined && updates.id.trim() && updates.id !== comp.id) {
-      // Check ID uniqueness
       const screen = this.getActiveScreen();
       if (!screen.components.some(c => c.id === updates.id)) {
+        const oldId = comp.id;
         comp.id = updates.id.trim();
+        // Update children pointers
+        screen.components.forEach(c => {
+          if (c.parent === oldId) c.parent = comp.id;
+        });
       }
     }
+
     if (updates.properties) {
       comp.properties = { ...comp.properties, ...updates.properties };
     }
@@ -190,11 +258,19 @@ export class ProjectModel {
         description: `Modify ${comp.id}`,
         undo: () => {
           Object.assign(comp, oldState);
+          comp.transform.x = oldState.x;
+          comp.transform.y = oldState.y;
+          comp.transform.width = oldState.width;
+          comp.transform.height = oldState.height;
           comp.properties = { ...oldState.properties };
           this.emitChange('componentUpdated', { component: comp, previous: newState });
         },
         execute: () => {
           Object.assign(comp, newState);
+          comp.transform.x = newState.x;
+          comp.transform.y = newState.y;
+          comp.transform.width = newState.width;
+          comp.transform.height = newState.height;
           comp.properties = { ...newState.properties };
           this.emitChange('componentUpdated', { component: comp, previous: oldState });
         }
@@ -205,19 +281,66 @@ export class ProjectModel {
     return comp;
   }
 
+  /**
+   * Reparents a node under a new parent container.
+   */
+  reparentNode(nodeId, newParentId) {
+    const screen = this.getActiveScreen();
+    if (!screen) return;
+    const node = this.getComponent(nodeId);
+    if (!node) return;
+
+    if (newParentId === nodeId) return; // Cannot parent to itself
+
+    if (newParentId) {
+      const newParent = this.getComponent(newParentId);
+      if (!newParent) return;
+      if (newParent.isDescendantOf(nodeId, this)) return; // Prevent cycle
+      if (newParent.screen !== node.screen) return; // Must be on same display
+    }
+
+    const oldParentId = node.parent;
+    if (oldParentId === newParentId) return;
+
+    // Apply reparenting
+    if (oldParentId) {
+      const oldParent = this.getComponent(oldParentId);
+      if (oldParent) oldParent.removeChild(nodeId);
+    }
+
+    node.parent = newParentId || null;
+
+    if (newParentId) {
+      const newParent = this.getComponent(newParentId);
+      if (newParent) newParent.addChild(nodeId);
+    }
+
+    this.history.push({
+      description: `Reparent ${nodeId} to ${newParentId || 'root'}`,
+      undo: () => {
+        this.reparentNode(nodeId, oldParentId);
+      },
+      execute: () => {
+        this.reparentNode(nodeId, newParentId);
+      }
+    });
+
+    this.emitChange('hierarchyChanged', { nodeId, newParentId, oldParentId });
+  }
+
   duplicateComponent(componentId) {
     const comp = this.getComponent(componentId);
     if (!comp) return null;
     const cloned = comp.clone({
       id: `${comp.id}_copy`,
       x: comp.x + 8,
-      y: comp.y + 8
+      y: comp.y + 8,
+      parent: comp.parent
     });
     return this.addComponent(cloned);
   }
 
   reorderComponent(componentId, direction) {
-    // direction: 'up' | 'down' | 'top' | 'bottom'
     const screen = this.getActiveScreen();
     if (!screen) return;
     const index = screen.components.findIndex(c => c.id === componentId);
@@ -266,6 +389,7 @@ export class ProjectModel {
   toJSON() {
     const screen = this.getActiveScreen();
     return {
+      schemaVersion: 1,
       id: screen.id,
       name: screen.name,
       top: { ...screen.top },
