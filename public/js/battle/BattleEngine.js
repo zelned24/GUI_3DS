@@ -39,6 +39,10 @@ export class BattleEngine {
     return () => this.off(eventName, callback);
   }
 
+  onEvent(callback) {
+    return this.on('*', callback);
+  }
+
   off(eventName, callback) {
     if (!this.listeners.has(eventName)) return;
     const filtered = this.listeners.get(eventName).filter(cb => cb !== callback);
@@ -50,11 +54,20 @@ export class BattleEngine {
     const event = createBattleEvent(eventName, payload, this.state?.turn || 1, this.stepCounter);
     this.state.eventLog.push(event);
 
+    // Call specific listeners
     if (this.listeners.has(eventName)) {
       this.listeners.get(eventName).forEach(cb => {
         try { cb(event); } catch (e) { console.error('Error in event listener:', e); }
       });
     }
+
+    // Call wildcard onEvent listeners
+    if (this.listeners.has('*')) {
+      this.listeners.get('*').forEach(cb => {
+        try { cb(event); } catch (e) { console.error('Error in onEvent listener:', e); }
+      });
+    }
+
     return event;
   }
 

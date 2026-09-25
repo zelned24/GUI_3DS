@@ -26,6 +26,8 @@ import { BattleCommand, SelectMoveCommand, ForfeitCommand } from '../public/js/b
 import { BattleEventTypes } from '../public/js/battle/BattleEvents.js';
 import { ActionOrderPhase, DamagePhase, FaintCheckPhase } from '../public/js/battle/BattlePhases.js';
 import { BattleSession } from '../public/js/battle/BattleSession.js';
+import { AppShell, AppStates } from '../public/js/shell/AppShell.js';
+import { WaveManager } from '../public/js/wave/WaveManager.js';
 import { getFallbackTestFixture } from './fixtures/fallbackVerticalSlice.js';
 import {
   UPSTREAM_SPECIES_ENUM_FIXTURE,
@@ -988,6 +990,134 @@ test('MILESTONE 12.6: Offline canonical enum fallback ensures 100% resolved IDs 
 
   const st = result.abilities.find(a => a.id === 'static');
   assert.ok(st);
+});
+
+test('MILESTONE 13.1: AppShell controls state transitions and lifecycle without DOM leakage', async () => {
+  const shell = new AppShell();
+  assert.strictEqual(shell.currentState, AppStates.BOOT);
+
+  // Transition to TITLE
+  await shell.transitionTo(AppStates.TITLE);
+  assert.strictEqual(shell.currentState, AppStates.TITLE);
+
+  // Transition to SETUP
+  await shell.transitionTo(AppStates.SETUP);
+  assert.strictEqual(shell.currentState, AppStates.SETUP);
+
+  // Transition to DEBUG invokes hook
+  let debugInvoked = false;
+  shell.onEnterDebug = () => { debugInvoked = true; };
+  await shell.transitionTo(AppStates.DEBUG);
+  assert.strictEqual(shell.currentState, AppStates.DEBUG);
+  assert.strictEqual(debugInvoked, true);
+
+  shell.destroy();
+});
+
+test('MILESTONE 13.2: WaveManager progresses from Wave 1 to Wave 10 and produces run summary', () => {
+  const wm = new WaveManager();
+  wm.resetRun({ speciesId: 'pikachu', level: 20 });
+  assert.strictEqual(wm.currentWave, 1);
+  assert.strictEqual(wm.isRunComplete(), false);
+
+  // Wave 1
+  const w1 = wm.getCurrentWaveDefinition();
+  assert.strictEqual(w1.waveNumber, 1);
+  assert.strictEqual(w1.isBoss, false);
+
+  // Simulate victory on wave 1
+  wm.recordBattleResult({ won: true, turns: 3, damageDealt: 50, damageTaken: 12 });
+  assert.strictEqual(wm.runStats.battlesWon, 1);
+
+  // Advance waves 2 through 10
+  for (let i = 2; i <= 10; i++) {
+    const wDef = wm.advanceWave();
+    assert.strictEqual(wDef.waveNumber, i);
+    if (i === 5) {
+      assert.strictEqual(wDef.isMiniBoss, true, 'Wave 5 should be mini-boss');
+    }
+    wm.recordBattleResult({ won: true, turns: 2, damageDealt: 40, damageTaken: 5 });
+  }
+
+  assert.strictEqual(wm.currentWave, 10);
+  const w10 = wm.getCurrentWaveDefinition();
+  assert.strictEqual(w10.waveNumber, 10);
+  assert.strictEqual(w10.isBoss, true, 'Wave 10 must be the Alpha Stage Boss');
+
+  // Clear Wave 10 and finish run
+  wm.advanceWave();
+  assert.strictEqual(wm.isRunComplete(), true);
+
+  const summary = wm.getRunSummary();
+  assert.strictEqual(summary.cleared, true);
+  assert.strictEqual(summary.wavesCompleted, 10);
+  assert.strictEqual(summary.totalWaves, 10);
+  assert.ok(summary.totalTurns > 0);
+  assert.ok(summary.damageDealt > 0);
+});
+
+test('MILESTONE 13.3: WaveManager creates valid BattleState across all 10 waves', () => {
+  const wm = new WaveManager();
+  wm.resetRun({ speciesId: 'pikachu', level: 25 });
+
+  for (let wave = 1; wave <= 10; wave++) {
+    wm.currentWave = wave;
+    const battleState = wm.createBattleStateForCurrentWave(1000);
+    assert.strictEqual(battleState.wave, wave);
+    assert.ok(battleState.player.active.currentHp > 0);
+    assert.ok(battleState.enemy.active.currentHp > 0);
+    assert.strictEqual(battleState.player.active.species.id, 'pikachu');
+    assert.ok(battleState.enemy.active.species.id === 'golem' || battleState.enemy.active.species.id === 'pikachu');
+  }
+});
+
+test('MILESTONE 13.4: Complete playable loop simulation (Boot -> Setup -> Wave 1 -> Victory -> Wave 10 -> Summary)', async () => {
+  const shell = new AppShell();
+  shell.init();
+  assert.strictEqual(shell.currentState, AppStates.TITLE);
+
+  // 1. Enter Setup
+  await shell.transitionTo(AppStates.SETUP);
+  assert.strictEqual(shell.currentState, AppStates.SETUP);
+
+  // 2. Start Run with Pikachu Lv 30
+  shell.startNewRun({ speciesId: 'pikachu', level: 30 });
+  assert.strictEqual(shell.currentState, AppStates.WAVE_INTRO);
+  assert.strictEqual(shell.waveManager.currentWave, 1);
+
+  // 3. Enter Battle Wave 1
+  await shell.transitionTo(AppStates.BATTLE);
+  assert.strictEqual(shell.currentState, AppStates.BATTLE);
+
+  // 4. Record victory and advance to Wave 2
+  shell.waveManager.recordBattleResult({ won: true, turns: 2, damageDealt: 60, damageTaken: 0 });
+  await shell.transitionTo(AppStates.RESULT, { won: true, wave: 1 });
+  assert.strictEqual(shell.currentState, AppStates.RESULT);
+
+  // 5. Advance through waves 2 to 9
+  for (let w = 2; w <= 9; w++) {
+    shell.advanceWave();
+    assert.strictEqual(shell.currentState, AppStates.WAVE_INTRO);
+    assert.strictEqual(shell.waveManager.currentWave, w);
+    shell.waveManager.recordBattleResult({ won: true, turns: 3, damageDealt: 70, damageTaken: 10 });
+  }
+
+  // 6. Advance to Wave 10
+  shell.advanceWave();
+  assert.strictEqual(shell.currentState, AppStates.WAVE_INTRO);
+  assert.strictEqual(shell.waveManager.currentWave, 10);
+  shell.waveManager.recordBattleResult({ won: true, turns: 5, damageDealt: 150, damageTaken: 20 });
+
+  // 7. Advance past Wave 10 leads to RUN_SUMMARY
+  shell.advanceWave();
+  assert.strictEqual(shell.currentState, AppStates.RUN_SUMMARY);
+  assert.strictEqual(shell.waveManager.isRunComplete(), true);
+
+  // 8. Return to Title
+  await shell.transitionTo(AppStates.TITLE);
+  assert.strictEqual(shell.currentState, AppStates.TITLE);
+
+  shell.destroy();
 });
 
 async function runAllTests() {

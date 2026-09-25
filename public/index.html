@@ -9,6 +9,7 @@
   <meta property="og:description" content="Local visual IDE for Nintendo 3DS and PokéRogue interfaces">
   <link rel="stylesheet" href="css/main.css">
   <link rel="stylesheet" href="css/preview.css">
+  <link rel="stylesheet" href="css/game.css">
 </head>
 <body>
   <div id="app_root">
@@ -22,7 +23,8 @@
 
         <!-- STUDIO 5-PILLAR MODE SWITCHER -->
         <nav class="studio-mode-switcher">
-          <button id="mode_ui_studio" class="mode-tab active" title="UI Screens, Components, Layout">🎨 UI Studio</button>
+          <button id="mode_game_player" class="mode-tab active" title="Playable 3DS Game Experience (Waves 1-10)">🎮 Game Play</button>
+          <button id="mode_ui_studio" class="mode-tab" title="UI Screens, Components, Layout">🎨 UI Studio</button>
           <button id="mode_data_studio" class="mode-tab" title="Canonical PokéRogue Data, Species, Moves, Abilities">📊 Data Studio</button>
           <button id="mode_battle_lab" class="mode-tab" title="Battle Simulation, Replay, Phase Debugger">⚔️ Battle Lab</button>
         </nav>
@@ -155,6 +157,23 @@
         </div>
       </aside>
     </main>
+
+    <!-- 3DS GAME PLAY VIEW (PRIMARY PLAYER EXPERIENCE) -->
+    <section class="studio-subview" id="game_view" style="display: flex;">
+      <div class="game-3ds-container">
+        <!-- TOP SCREEN VIEWPORT (400x240) -->
+        <div class="viewport-3ds top-screen">
+          <div class="viewport-label">TOP SCREEN (400×240)</div>
+          <div id="game_top_screen" style="width: 100%; height: 100%;"></div>
+        </div>
+
+        <!-- BOTTOM SCREEN VIEWPORT (320x240) -->
+        <div class="viewport-3ds bottom-screen">
+          <div class="viewport-label">BOTTOM TOUCH SCREEN (320×240)</div>
+          <div id="game_bottom_screen" style="width: 100%; height: 100%;"></div>
+        </div>
+      </div>
+    </section>
 
     <!-- DATA STUDIO SUBVIEW -->
     <section class="studio-subview" id="data_studio_view" style="display: none;"></section>

@@ -8,6 +8,7 @@ import { dataManager } from '../data/DataManager.js';
 
 export class PokemonBattleData {
   constructor(species, level = 20, nickname = null) {
+    this.species = species;
     this.speciesId = species.id;
     this.speciesName = species.name;
     this.nickname = nickname || species.name;
@@ -94,7 +95,7 @@ export class PokemonBattleData {
 
   clone() {
     const copy = new PokemonBattleData(
-      {
+      this.species || {
         id: this.speciesId,
         name: this.speciesName,
         types: this.types,

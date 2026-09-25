@@ -9,6 +9,7 @@ import { Validator } from './core/Validator.js';
 import { CodeGenerator } from './generator/CodeGenerator.js';
 import { DataStudioUI } from './data/DataStudioUI.js';
 import { BattleLabUI } from './battle/BattleLabUI.js';
+import { AppShell, AppStates } from './shell/AppShell.js';
 
 /**
  * StudioApp - Main Studio IDE Application orchestrator.
@@ -35,12 +36,23 @@ class StudioApp {
     this.validationModal = document.getElementById('validation_modal');
 
     // 5-Pillar Studios: Data Studio & Battle Lab
-    this.currentMode = 'ui';
+    this.currentMode = 'game';
     this.dataStudioContainer = document.getElementById('data_studio_view');
     this.dataStudio = new DataStudioUI(this.dataStudioContainer);
 
     this.battleLabContainer = document.getElementById('battle_lab_view');
     this.battleLab = new BattleLabUI(this.battleLabContainer);
+
+    // Primary 3DS Game Player Engine (AppShell)
+    this.gameTopContainer = document.getElementById('game_top_screen');
+    this.gameBottomContainer = document.getElementById('game_bottom_screen');
+    this.appShell = new AppShell({
+      topContainer: this.gameTopContainer,
+      bottomContainer: this.gameBottomContainer,
+      onEnterDebug: () => {
+        this.setStudioMode('battle');
+      }
+    });
 
     this._init();
   }
@@ -58,7 +70,11 @@ class StudioApp {
     this.canvasRenderer.resizeToContainer();
     this.canvasRenderer.render();
     this.hierarchy.render();
-    this.updateStatus('Studio Ready. Nintendo 3DS Mode active.');
+
+    // Start 3DS Game Player Engine (Primary Experience)
+    this.appShell.init();
+    this.setStudioMode('game');
+    this.updateStatus('PokéRogue 3DS Game Player active — Dual 400x240 / 320x240 screens.');
   }
 
   async loadProjectFromServer() {
@@ -458,6 +474,7 @@ class StudioApp {
     });
 
     // 5-Pillar Mode Switcher Tabs
+    document.getElementById('mode_game_player')?.addEventListener('click', () => this.setStudioMode('game'));
     document.getElementById('mode_ui_studio')?.addEventListener('click', () => this.setStudioMode('ui'));
     document.getElementById('mode_data_studio')?.addEventListener('click', () => this.setStudioMode('data'));
     document.getElementById('mode_battle_lab')?.addEventListener('click', () => this.setStudioMode('battle'));
@@ -572,14 +589,23 @@ class StudioApp {
 
   setStudioMode(mode) {
     this.currentMode = mode;
+    const gameView = document.getElementById('game_view');
     const uiView = document.getElementById('ui_studio_view');
     const dataView = document.getElementById('data_studio_view');
     const battleView = document.getElementById('battle_lab_view');
 
     document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
 
-    if (mode === 'ui') {
+    if (mode === 'game') {
+      document.getElementById('mode_game_player')?.classList.add('active');
+      if (gameView) gameView.style.display = 'flex';
+      if (uiView) uiView.style.display = 'none';
+      if (dataView) dataView.style.display = 'none';
+      if (battleView) battleView.style.display = 'none';
+      this.updateStatus('Game Play Mode active — Nintendo 3DS Dual Viewport (Waves 1-10).');
+    } else if (mode === 'ui') {
       document.getElementById('mode_ui_studio')?.classList.add('active');
+      if (gameView) gameView.style.display = 'none';
       if (uiView) uiView.style.display = 'flex';
       if (dataView) dataView.style.display = 'none';
       if (battleView) battleView.style.display = 'none';
@@ -588,6 +614,7 @@ class StudioApp {
       this.updateStatus('UI Studio active — Designing 3DS screens & components.');
     } else if (mode === 'data') {
       document.getElementById('mode_data_studio')?.classList.add('active');
+      if (gameView) gameView.style.display = 'none';
       if (uiView) uiView.style.display = 'none';
       if (dataView) dataView.style.display = 'block';
       if (battleView) battleView.style.display = 'none';
@@ -595,6 +622,7 @@ class StudioApp {
       this.updateStatus('Data Studio active — Canonical PokéRogue species, moves & abilities.');
     } else if (mode === 'battle') {
       document.getElementById('mode_battle_lab')?.classList.add('active');
+      if (gameView) gameView.style.display = 'none';
       if (uiView) uiView.style.display = 'none';
       if (dataView) dataView.style.display = 'none';
       if (battleView) battleView.style.display = 'block';
