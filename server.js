@@ -143,24 +143,43 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && pathname === '/api/generate-cpp') {
     try {
       const data = await parseJsonBody(req);
-      const { className, hpp, cpp } = data;
+      const { className, hpp, cpp, files } = data;
 
-      if (!className || !hpp || !cpp) {
-        sendJson(res, 400, { error: 'Missing required code generation fields' });
-        return;
+      const writtenFiles = [];
+
+      if (files && typeof files === 'object') {
+        for (const [relPath, content] of Object.entries(files)) {
+          const cleanRel = relPath.startsWith('generated/') ? relPath.substring('generated/'.length) : relPath;
+          const fullPath = path.join(PROJECT_DIR, 'generated', cleanRel);
+          const parentDir = path.dirname(fullPath);
+          if (!fs.existsSync(parentDir)) {
+            fs.mkdirSync(parentDir, { recursive: true });
+          }
+          fs.writeFileSync(fullPath, content, 'utf8');
+          writtenFiles.push(path.relative(__dirname, fullPath));
+        }
       }
 
-      const hppFile = path.join(GENERATED_INC_DIR, `${className}.hpp`);
-      const cppFile = path.join(GENERATED_SRC_DIR, `${className}.cpp`);
+      if (className && hpp && cpp) {
+        const hppFile = path.join(GENERATED_INC_DIR, `${className}.hpp`);
+        const cppFile = path.join(GENERATED_SRC_DIR, `${className}.cpp`);
+        fs.writeFileSync(hppFile, hpp, 'utf8');
+        fs.writeFileSync(cppFile, cpp, 'utf8');
+        writtenFiles.push(path.relative(__dirname, hppFile));
+        writtenFiles.push(path.relative(__dirname, cppFile));
+      }
 
-      fs.writeFileSync(hppFile, hpp, 'utf8');
-      fs.writeFileSync(cppFile, cpp, 'utf8');
+      if (writtenFiles.length === 0) {
+        sendJson(res, 400, { error: 'Missing required code generation fields (className, hpp, cpp or files dictionary)' });
+        return;
+      }
 
       sendJson(res, 200, {
         success: true,
         message: 'C++ files written to disk',
-        hppPath: path.relative(__dirname, hppFile),
-        cppPath: path.relative(__dirname, cppFile)
+        writtenFiles,
+        hppPath: writtenFiles[0] || '',
+        cppPath: writtenFiles[1] || ''
       });
     } catch (err) {
       sendJson(res, 500, { error: err.message });

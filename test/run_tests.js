@@ -46,6 +46,8 @@ import { Keyframe } from '../public/js/animation/Keyframe.js';
 import { Interpolation } from '../public/js/animation/Interpolation.js';
 import { AnimationTrack } from '../public/js/animation/AnimationTrack.js';
 import { TimelineEvaluator } from '../public/js/animation/TimelineEvaluator.js';
+import { SceneValidator } from '../public/js/generator/SceneValidator.js';
+import { SceneCppExporter } from '../public/js/generator/SceneCppExporter.js';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1837,6 +1839,588 @@ test('BETA-UI-2.11: Pre-built Demo Scenes verify against specification', () => {
   assert.strictEqual(dualScene.components.filter(c => c.screen === 'bottom').length >= 3, true);
   assert.ok(dualScene.tracks.some(t => t.targetNodeId === 'top_charizard'));
   assert.ok(dualScene.tracks.some(t => t.targetNodeId === 'bottom_panel'));
+});
+
+// =========================================================================
+// BETA-UI-3: C++ ANIMATION EXPORT + CITRO2D RUNTIME TEST SUITE
+// =========================================================================
+
+test('BETA-UI-3.1: Basic Scene Export generates all required C++ and manifest files', () => {
+  const pikaFilePath = path.join(__dirname, '..', 'project', 'screens', 'PikachuEntrance.json');
+  const pikaData = JSON.parse(fs.readFileSync(pikaFilePath, 'utf8'));
+  const pikaScene = new SceneModel(pikaData);
+
+  const val = SceneValidator.validate(pikaScene);
+  assert.strictEqual(val.valid, true, 'PikachuEntrance scene must pass validation');
+
+  const result = SceneCppExporter.export(pikaScene);
+  assert.ok(result, 'Export must return result object');
+  assert.strictEqual(result.sceneId, 'PikachuEntrance');
+  assert.strictEqual(result.className, 'PikachuEntranceScene');
+
+  // Verify all required files exist and have non-empty content
+  const requiredFiles = [
+    'generated/include/screens/SceneData.hpp',
+    'generated/src/screens/SceneData.cpp',
+    'generated/include/screens/SceneAssets.hpp',
+    'generated/src/screens/SceneAssets.cpp',
+    'generated/include/screens/AssetManifest.hpp',
+    'generated/src/screens/AssetManifest.cpp',
+    'generated/include/screens/SceneTimeline.hpp',
+    'generated/src/screens/SceneTimeline.cpp',
+    'generated/include/screens/Scene.hpp',
+    'generated/src/screens/Scene.cpp',
+    'generated/include/screens/PikachuEntranceScene.hpp',
+    'generated/src/screens/PikachuEntranceScene.cpp',
+    'generated/SceneManifest.json'
+  ];
+
+  for (const rf of requiredFiles) {
+    assert.ok(result.files[rf], `File "${rf}" must be generated`);
+    assert.ok(result.files[rf].length > 50, `File "${rf}" must have meaningful content`);
+  }
+});
+
+test('BETA-UI-3.2: Export determinism produces byte-identical output across repeated exports', () => {
+  const pikaFilePath = path.join(__dirname, '..', 'project', 'screens', 'PikachuEntrance.json');
+  const pikaData = JSON.parse(fs.readFileSync(pikaFilePath, 'utf8'));
+  const pikaScene = new SceneModel(pikaData);
+
+  const export1 = SceneCppExporter.export(pikaScene);
+  const export2 = SceneCppExporter.export(pikaScene);
+  const export3 = SceneCppExporter.export(pikaScene);
+
+  for (const [filePath, content] of Object.entries(export1.files)) {
+    assert.strictEqual(export2.files[filePath], content, `File "${filePath}" must be byte-identical in run 2`);
+    assert.strictEqual(export3.files[filePath], content, `File "${filePath}" must be byte-identical in run 3`);
+  }
+
+  // Also test with DualScreenScene
+  const dualFilePath = path.join(__dirname, '..', 'project', 'screens', 'DualScreenScene.json');
+  const dualData = JSON.parse(fs.readFileSync(dualFilePath, 'utf8'));
+  const dualScene = new SceneModel(dualData);
+  const dualExport1 = SceneCppExporter.export(dualScene);
+  const dualExport2 = SceneCppExporter.export(dualScene);
+
+  for (const [filePath, content] of Object.entries(dualExport1.files)) {
+    assert.strictEqual(dualExport2.files[filePath], content, `DualScreen file "${filePath}" must be byte-identical`);
+  }
+});
+
+test('BETA-UI-3.3: Keyframe export creates compact static C++ struct arrays without per-frame bloat', () => {
+  const pikaFilePath = path.join(__dirname, '..', 'project', 'screens', 'PikachuEntrance.json');
+  const pikaData = JSON.parse(fs.readFileSync(pikaFilePath, 'utf8'));
+  const pikaScene = new SceneModel(pikaData);
+  const result = SceneCppExporter.export(pikaScene);
+
+  const cpp = result.dataCpp;
+  assert.ok(cpp.includes('static const SceneKeyframe s_keyframes_'), 'Must define static SceneKeyframe arrays');
+  assert.ok(cpp.includes('PropertyId::X'), 'Must reference PropertyId::X');
+  assert.ok(cpp.includes('InterpolationType::Linear'), 'Must reference InterpolationType::Linear');
+  assert.ok(cpp.includes('InterpolationType::EaseInOut'), 'Must reference InterpolationType::EaseInOut');
+  assert.ok(cpp.includes('static const SceneTrack s_tracks[]'), 'Must define static SceneTrack table');
+
+  // Verify compact representation: 90 frames does NOT generate 90 lines of C++
+  const lineCount = cpp.split('\n').length;
+  assert.ok(lineCount < 200, `Generated C++ should be compact static data, was ${lineCount} lines`);
+});
+
+test('BETA-UI-3.4: Pure interpolation parity across all 5 curves (STEP, LINEAR, EASE_IN, EASE_OUT, EASE_IN_OUT)', () => {
+  const curves = [
+    { type: 'step', id: 0 },
+    { type: 'linear', id: 1 },
+    { type: 'easeIn', id: 2 },
+    { type: 'easeOut', id: 3 },
+    { type: 'easeInOut', id: 4 }
+  ];
+
+  for (const c of curves) {
+    for (let step = 0; step <= 20; step++) {
+      const t = step / 20.0;
+      const jsVal = Interpolation.evaluateProgress(t, c.type);
+
+      // Simulated C++ evaluator from SceneCppExporter
+      const cppProgress = (normT, interpId) => {
+        const clampedT = Math.max(0, Math.min(1, normT));
+        switch (interpId) {
+          case 0: return clampedT < 1.0 ? 0.0 : 1.0;
+          case 1: return clampedT;
+          case 2: return clampedT * clampedT;
+          case 3: return clampedT * (2.0 - clampedT);
+          case 4: return clampedT < 0.5 ? 2.0 * clampedT * clampedT : -1.0 + (4.0 - 2.0 * clampedT) * clampedT;
+          default: return clampedT;
+        }
+      };
+
+      const cppVal = cppProgress(t, c.id);
+      const diff = Math.abs(jsVal - cppVal);
+      assert.ok(diff < 1e-6, `Curve ${c.type} at t=${t} must match: js=${jsVal}, cpp=${cppVal}`);
+    }
+  }
+});
+
+test('BETA-UI-3.5: Multi-track animation evaluation on spatial and appearance properties', () => {
+  const scene = new SceneModel({
+    id: 'MultiTrackScene',
+    durationFrames: 60,
+    fps: 60,
+    components: [
+      {
+        id: 'box_elem',
+        type: 'RogueBox',
+        screen: 'top',
+        x: 10,
+        y: 10,
+        width: 100,
+        height: 60,
+        properties: { backgroundColor: '#ff0000' }
+      }
+    ]
+  });
+
+  const propConfigs = [
+    { path: 'transform.x', kfs: [{ f: 0, v: 10 }, { f: 60, v: 100 }] },
+    { path: 'transform.y', kfs: [{ f: 0, v: 20 }, { f: 60, v: 80 }] },
+    { path: 'transform.scaleX', kfs: [{ f: 0, v: 1.0 }, { f: 60, v: 2.5 }] },
+    { path: 'transform.scaleY', kfs: [{ f: 0, v: 1.0 }, { f: 60, v: 0.5 }] },
+    { path: 'transform.rotation', kfs: [{ f: 0, v: 0 }, { f: 60, v: 180 }] },
+    { path: 'opacity', kfs: [{ f: 0, v: 0.2 }, { f: 60, v: 1.0 }] }
+  ];
+
+  for (const cfg of propConfigs) {
+    const tr = new AnimationTrack({ targetNodeId: 'box_elem', propertyPath: cfg.path });
+    for (const kf of cfg.kfs) {
+      tr.addKeyframe(kf.f, kf.v, 'linear');
+    }
+    scene.addTrack(tr);
+  }
+
+  const exported = SceneCppExporter.export(scene);
+
+  // Evaluate at frame 30 (midpoint)
+  const jsEval = TimelineEvaluator.evaluateScene(scene, 30).get('box_elem');
+  const cppEval = SceneCppExporter.evaluateExportedData(exported.exportModel, 30).get('box_elem');
+
+  assert.strictEqual(jsEval.transform.x, 55);
+  assert.strictEqual(cppEval.transform.x, 55);
+
+  assert.strictEqual(jsEval.transform.y, 50);
+  assert.strictEqual(cppEval.transform.y, 50);
+
+  assert.strictEqual(jsEval.transform.scaleX, 1.75);
+  assert.strictEqual(cppEval.transform.scaleX, 1.75);
+
+  assert.strictEqual(jsEval.transform.scaleY, 0.75);
+  assert.strictEqual(cppEval.transform.scaleY, 0.75);
+
+  assert.strictEqual(jsEval.transform.rotation, 90);
+  assert.strictEqual(cppEval.transform.rotation, 90);
+
+  assert.strictEqual(parseFloat(jsEval.opacity.toFixed(2)), 0.6);
+  assert.strictEqual(parseFloat(cppEval.opacity.toFixed(2)), 0.6);
+});
+
+test('BETA-UI-3.6: Node hierarchy parent-child world transform accumulation in exported data', () => {
+  const scene = new SceneModel({
+    id: 'HierarchyScene',
+    durationFrames: 40,
+    fps: 60,
+    components: [
+      {
+        id: 'parent_group',
+        type: 'Group',
+        screen: 'top',
+        x: 100,
+        y: 50,
+        width: 150,
+        height: 100
+      },
+      {
+        id: 'child_image',
+        type: 'Image',
+        screen: 'top',
+        x: 30,
+        y: 20,
+        width: 40,
+        height: 40,
+        parent: 'parent_group',
+        properties: { asset: 'bg_arena_plains' }
+      }
+    ]
+  });
+
+  const track = new AnimationTrack({ targetNodeId: 'parent_group', propertyPath: 'transform.x' });
+  track.addKeyframe(0, 100, 'linear');
+  track.addKeyframe(40, 200, 'linear');
+  scene.addTrack(track);
+
+  const exported = SceneCppExporter.export(scene);
+  const exportNodes = exported.exportModel.nodes;
+
+  const parentExport = exportNodes.find(n => n.id === 'parent_group');
+  const childExport = exportNodes.find(n => n.id === 'child_image');
+
+  assert.ok(parentExport, 'Parent node must be exported');
+  assert.ok(childExport, 'Child node must be exported');
+  assert.strictEqual(childExport.parentIndex, parentExport.index, 'Child parentIndex must match parent array index');
+
+  // Verify at frame 20 (parent evaluated local X is 150)
+  const cppEval = SceneCppExporter.evaluateExportedData(exported.exportModel, 20);
+  const parentLocalX = cppEval.get('parent_group').transform.x;
+  assert.strictEqual(parentLocalX, 150);
+
+  // Accumulated world X = 150 + 30 = 180
+  const worldX = parentLocalX + childExport.x;
+  assert.strictEqual(worldX, 180);
+});
+
+test('BETA-UI-3.7: Opacity evaluation and clamping [0..1]', () => {
+  const scene = new SceneModel({
+    id: 'OpacityScene',
+    durationFrames: 30,
+    fps: 60,
+    components: [
+      {
+        id: 'fade_img',
+        type: 'Image',
+        screen: 'top',
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        properties: { asset: 'bg_arena_plains' },
+        opacity: 0
+      }
+    ]
+  });
+
+  const track = new AnimationTrack({ targetNodeId: 'fade_img', propertyPath: 'opacity' });
+  track.addKeyframe(0, 0.0, 'linear');
+  track.addKeyframe(30, 1.0, 'linear');
+  scene.addTrack(track);
+
+  const exported = SceneCppExporter.export(scene);
+
+  const eval0 = SceneCppExporter.evaluateExportedData(exported.exportModel, 0).get('fade_img');
+  assert.strictEqual(eval0.opacity, 0.0);
+
+  const eval15 = SceneCppExporter.evaluateExportedData(exported.exportModel, 15).get('fade_img');
+  assert.strictEqual(eval15.opacity, 0.5);
+
+  const eval30 = SceneCppExporter.evaluateExportedData(exported.exportModel, 30).get('fade_img');
+  assert.strictEqual(eval30.opacity, 1.0);
+});
+
+test('BETA-UI-3.8: Visibility boolean track evaluation with threshold', () => {
+  const scene = new SceneModel({
+    id: 'VisScene',
+    durationFrames: 40,
+    fps: 60,
+    components: [
+      {
+        id: 'blinking_text',
+        type: 'PixelText',
+        screen: 'top',
+        x: 10,
+        y: 10,
+        width: 100,
+        height: 20,
+        properties: { text: 'BLINK' },
+        visible: false
+      }
+    ]
+  });
+
+  const track = new AnimationTrack({ targetNodeId: 'blinking_text', propertyPath: 'visible', valueType: 'boolean' });
+  track.addKeyframe(0, false, 'step');
+  track.addKeyframe(20, true, 'step');
+  scene.addTrack(track);
+
+  const exported = SceneCppExporter.export(scene);
+
+  const eval5 = SceneCppExporter.evaluateExportedData(exported.exportModel, 5).get('blinking_text');
+  assert.strictEqual(eval5.visible, false);
+
+  const eval19 = SceneCppExporter.evaluateExportedData(exported.exportModel, 19).get('blinking_text');
+  assert.strictEqual(eval19.visible, false);
+
+  const eval20 = SceneCppExporter.evaluateExportedData(exported.exportModel, 20).get('blinking_text');
+  assert.strictEqual(eval20.visible, true);
+
+  const eval35 = SceneCppExporter.evaluateExportedData(exported.exportModel, 35).get('blinking_text');
+  assert.strictEqual(eval35.visible, true);
+});
+
+test('BETA-UI-3.9: Dual-screen scene composition partitions Top (400x240) and Bottom (320x240) under single timeline', () => {
+  const dualFilePath = path.join(__dirname, '..', 'project', 'screens', 'DualScreenScene.json');
+  const dualData = JSON.parse(fs.readFileSync(dualFilePath, 'utf8'));
+  const dualScene = new SceneModel(dualData);
+
+  const exported = SceneCppExporter.export(dualScene);
+  const nodes = exported.exportModel.nodes;
+
+  const topNodes = nodes.filter(n => n.screen === 'top');
+  const bottomNodes = nodes.filter(n => n.screen === 'bottom');
+
+  assert.ok(topNodes.length >= 3, 'Top screen nodes partitioned correctly');
+  assert.ok(bottomNodes.length >= 3, 'Bottom screen nodes partitioned correctly');
+
+  // Verify backgrounds
+  assert.strictEqual(exported.exportModel.topBgColor, '0xFF1F1410');
+  assert.strictEqual(exported.exportModel.bottomBgColor, '0xFF261A17');
+
+  // Verify both top and bottom animated in single timeline
+  const tracks = exported.exportModel.tracks;
+  assert.ok(tracks.some(t => t.targetNodeId === 'top_charizard'), 'Top screen track exists');
+  assert.ok(tracks.some(t => t.targetNodeId === 'bottom_panel'), 'Bottom screen track exists');
+  assert.strictEqual(exported.exportModel.durationFrames, 90);
+});
+
+test('BETA-UI-3.10: Asset manifest contains only referenced assets sorted deterministically', () => {
+  const pikaFilePath = path.join(__dirname, '..', 'project', 'screens', 'PikachuEntrance.json');
+  const pikaData = JSON.parse(fs.readFileSync(pikaFilePath, 'utf8'));
+  const pikaScene = new SceneModel(pikaData);
+
+  const exported = SceneCppExporter.export(pikaScene);
+  const manifest = exported.manifest;
+
+  assert.strictEqual(manifest.sceneId, 'PikachuEntrance');
+  assert.ok(manifest.assetCount >= 2, 'Must include bg_arena_plains and pokemon sprite');
+
+  // Assets must be sorted alphabetically
+  for (let i = 0; i < manifest.assets.length - 1; i++) {
+    assert.ok(manifest.assets[i].assetId.localeCompare(manifest.assets[i + 1].assetId) <= 0);
+  }
+
+  // Must reference real 3DS target formats without invented paths
+  const pkmnAsset = manifest.assets.find(a => a.assetId.includes('pokemon'));
+  assert.ok(pkmnAsset, 'Pokémon asset entry must exist');
+  assert.strictEqual(pkmnAsset.format, 'RGBA4444');
+  assert.ok(pkmnAsset.romfsPath.includes('romfs/sprites/pokemon/25.t3x'));
+});
+
+test('BETA-UI-3.11: Timeline markers exported with exact integer frames, names, and types', () => {
+  const scene = new SceneModel({
+    id: 'MarkerScene',
+    durationFrames: 60,
+    fps: 60,
+    components: [{ id: 'dummy', type: 'PixelText', screen: 'top', x: 0, y: 0, width: 50, height: 20 }]
+  });
+
+  scene.addMarker({ frame: 10, name: 'SpawnCharizard', type: 'Event' });
+  scene.addMarker({ frame: 35, name: 'CameraShake', type: 'Sync' });
+
+  const exported = SceneCppExporter.export(scene);
+  const markers = exported.exportModel.markers;
+
+  assert.strictEqual(markers.length, 2);
+  assert.strictEqual(markers[0].frame, 10);
+  assert.strictEqual(markers[0].name, 'SpawnCharizard');
+  assert.strictEqual(markers[0].type, 'Event');
+
+  assert.strictEqual(markers[1].frame, 35);
+  assert.strictEqual(markers[1].name, 'CameraShake');
+  assert.strictEqual(markers[1].type, 'Sync');
+
+  assert.ok(exported.dataCpp.includes('{ 10, "SpawnCharizard", "Event" }'));
+  assert.ok(exported.dataCpp.includes('{ 35, "CameraShake", "Sync" }'));
+});
+
+test('BETA-UI-3.12: Audio cues exported with exact integer frames, assets, volume, and channel', () => {
+  const scene = new SceneModel({
+    id: 'AudioScene',
+    durationFrames: 90,
+    fps: 60,
+    components: [{ id: 'dummy', type: 'PixelText', screen: 'top', x: 0, y: 0, width: 50, height: 20 }]
+  });
+
+  scene.addAudioCue({ frame: 0, asset: 'bgm_battle_wild', volume: 0.85, channel: 0 });
+  scene.addAudioCue({ frame: 15, asset: 'sfx_pikachu_cry', volume: 1.0, channel: 1 });
+
+  const exported = SceneCppExporter.export(scene);
+  const cues = exported.exportModel.audioCues;
+
+  assert.strictEqual(cues.length, 2);
+  assert.strictEqual(cues[0].frame, 0);
+  assert.strictEqual(cues[0].asset, 'bgm_battle_wild');
+  assert.strictEqual(cues[0].volume, 0.85);
+  assert.strictEqual(cues[0].channel, 0);
+
+  assert.strictEqual(cues[1].frame, 15);
+  assert.strictEqual(cues[1].asset, 'sfx_pikachu_cry');
+  assert.strictEqual(cues[1].volume, 1.0);
+  assert.strictEqual(cues[1].channel, 1);
+
+  assert.ok(exported.dataCpp.includes('{ 0, "bgm_battle_wild", 0.85f, 0 }'));
+  assert.ok(exported.dataCpp.includes('{ 15, "sfx_pikachu_cry", 1f, 1 }') || exported.dataCpp.includes('{ 15, "sfx_pikachu_cry", 1.0f, 1 }'));
+});
+
+test('BETA-UI-3.13: Generated C++ structure conforms to modern Citro2D runtime standards', () => {
+  const pikaFilePath = path.join(__dirname, '..', 'project', 'screens', 'PikachuEntrance.json');
+  const pikaData = JSON.parse(fs.readFileSync(pikaFilePath, 'utf8'));
+  const pikaScene = new SceneModel(pikaData);
+  const result = SceneCppExporter.export(pikaScene);
+
+  // Check header structure
+  assert.ok(result.hpp.includes('#pragma once'));
+  assert.ok(result.hpp.includes('#include "screens/screen.hpp"'));
+  assert.ok(result.hpp.includes('class PikachuEntranceScene : public Screen'));
+  assert.ok(result.hpp.includes('void drawTop(Renderer2D& renderer) override;'));
+  assert.ok(result.hpp.includes('void drawBottom(Renderer2D& renderer) override;'));
+  assert.ok(result.hpp.includes('Citro2D::SceneTimeline& getTimeline()'));
+
+  // Check timeline header structure
+  assert.ok(result.timelineHpp.includes('uint32_t getCurrentFrame() const'));
+  assert.ok(result.timelineHpp.includes('void seek(uint32_t frame);'));
+  assert.ok(result.timelineHpp.includes('void advanceFrame();'));
+  assert.ok(result.timelineHpp.includes('void update(float dt'));
+
+  // Check Citro2D namespace
+  assert.ok(result.dataHpp.includes('namespace Citro2D {'));
+  assert.ok(result.timelineCpp.includes('namespace Citro2D {'));
+});
+
+test('BETA-UI-3.14: Export idempotence and document non-mutation', () => {
+  const pikaFilePath = path.join(__dirname, '..', 'project', 'screens', 'PikachuEntrance.json');
+  const pikaData = JSON.parse(fs.readFileSync(pikaFilePath, 'utf8'));
+  const pikaScene = new SceneModel(pikaData);
+
+  const beforeJson = JSON.stringify(pikaScene.toJSON());
+
+  // Export 5 times in succession
+  const runs = [];
+  for (let i = 0; i < 5; i++) {
+    runs.push(SceneCppExporter.export(pikaScene));
+  }
+
+  const afterJson = JSON.stringify(pikaScene.toJSON());
+  assert.strictEqual(beforeJson, afterJson, 'Export must never mutate authoring SceneModel document state');
+
+  // Verify all 5 runs are strictly identical
+  for (let i = 1; i < 5; i++) {
+    assert.strictEqual(runs[0].hpp, runs[i].hpp);
+    assert.strictEqual(runs[0].cpp, runs[i].cpp);
+    assert.strictEqual(runs[0].dataCpp, runs[i].dataCpp);
+    assert.strictEqual(runs[0].assetsCpp, runs[i].assetsCpp);
+  }
+});
+
+test('BETA-UI-3.15: Preview / Export Mathematical Parity across multiple keyframes', () => {
+  const demos = [
+    { file: 'PikachuEntrance.json', targetNode: 'pikachu_sprite', prop: 'transform.x' },
+    { file: 'MenuAnimation.json', targetNode: 'menu_panel', prop: 'transform.y' },
+    { file: 'DualScreenScene.json', targetNode: 'top_charizard', prop: 'transform.scaleX' }
+  ];
+
+  for (const demo of demos) {
+    const filePath = path.join(__dirname, '..', 'project', 'screens', demo.file);
+    const sceneData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    const scene = new SceneModel(sceneData);
+    const exported = SceneCppExporter.export(scene);
+
+    const track = scene.tracks.find(t => t.targetNodeId === demo.targetNode && t.propertyPath === demo.prop);
+    assert.ok(track, `Track for ${demo.targetNode}.${demo.prop} must exist`);
+
+    const framesToTest = [
+      0,
+      track.keyframes[0].frame,
+      Math.round((track.keyframes[0].frame + track.keyframes[track.keyframes.length - 1].frame) / 2),
+      track.keyframes[track.keyframes.length - 1].frame,
+      scene.durationFrames
+    ];
+
+    for (const f of framesToTest) {
+      const jsEval = TimelineEvaluator.evaluateScene(scene, f).get(demo.targetNode);
+      const cppEval = SceneCppExporter.evaluateExportedData(exported.exportModel, f).get(demo.targetNode);
+
+      const propKey = demo.prop.replace('transform.', '');
+      const jsVal = jsEval.transform[propKey];
+      const cppVal = cppEval.transform[propKey];
+
+      const diff = Math.abs(jsVal - cppVal);
+      assert.ok(diff < 1e-4, `Parity check failed for ${demo.file} node ${demo.targetNode} at frame ${f}: js=${jsVal}, cpp=${cppVal}`);
+    }
+  }
+});
+
+test('BETA-UI-3.16: SceneValidator rejects corrupted scenes before export', () => {
+  // 1. Duplicate node IDs
+  const badScene1 = {
+    id: 'BadScene1',
+    durationFrames: 60,
+    fps: 60,
+    top: { width: 400, height: 240 },
+    bottom: { width: 320, height: 240 },
+    components: [
+      { id: 'node_a', type: 'PixelText', screen: 'top', properties: { text: 'A' } },
+      { id: 'node_a', type: 'PixelText', screen: 'top', properties: { text: 'Duplicate' } }
+    ]
+  };
+  const val1 = SceneValidator.validate(badScene1);
+  assert.strictEqual(val1.valid, false);
+  assert.ok(val1.errors.some(e => e.includes('Duplicate node ID')));
+  assert.throws(() => SceneCppExporter.export(badScene1), /validation failed/);
+
+  // 2. Track targeting non-existent node
+  const badScene2 = {
+    id: 'BadScene2',
+    durationFrames: 60,
+    fps: 60,
+    top: { width: 400, height: 240 },
+    bottom: { width: 320, height: 240 },
+    components: [{ id: 'node_ok', type: 'PixelText', screen: 'top' }],
+    tracks: [{ targetNodeId: 'phantom_node', propertyPath: 'transform.x', keyframes: [] }]
+  };
+  const val2 = SceneValidator.validate(badScene2);
+  assert.strictEqual(val2.valid, false);
+  assert.ok(val2.errors.some(e => e.includes('non-existent node')));
+  assert.throws(() => SceneCppExporter.export(badScene2), /validation failed/);
+
+  // 3. Keyframe out of range
+  const badScene3 = {
+    id: 'BadScene3',
+    durationFrames: 60,
+    fps: 60,
+    top: { width: 400, height: 240 },
+    bottom: { width: 320, height: 240 },
+    components: [{ id: 'node_ok', type: 'PixelText', screen: 'top' }],
+    tracks: [{ targetNodeId: 'node_ok', propertyPath: 'transform.x', keyframes: [{ frame: 120, value: 50 }] }]
+  };
+  const val3 = SceneValidator.validate(badScene3);
+  assert.strictEqual(val3.valid, false);
+  assert.ok(val3.errors.some(e => e.includes('out of scene range')));
+  assert.throws(() => SceneCppExporter.export(badScene3), /validation failed/);
+
+  // 4. Hierarchy cycle
+  const badScene4 = {
+    id: 'BadScene4',
+    durationFrames: 60,
+    fps: 60,
+    top: { width: 400, height: 240 },
+    bottom: { width: 320, height: 240 },
+    components: [
+      { id: 'node_x', type: 'Group', screen: 'top', parent: 'node_y' },
+      { id: 'node_y', type: 'Group', screen: 'top', parent: 'node_x' }
+    ]
+  };
+  const val4 = SceneValidator.validate(badScene4);
+  assert.strictEqual(val4.valid, false);
+  assert.ok(val4.errors.some(e => e.includes('Hierarchy cycle detected')));
+  assert.throws(() => SceneCppExporter.export(badScene4), /validation failed/);
+
+  // 5. Invalid screen dimensions
+  const badScene5 = {
+    id: 'BadScene5',
+    durationFrames: 60,
+    fps: 60,
+    top: { width: 500, height: 300 }, // Invalid!
+    bottom: { width: 320, height: 240 },
+    components: [{ id: 'node_ok', type: 'PixelText', screen: 'top' }]
+  };
+  const val5 = SceneValidator.validate(badScene5);
+  assert.strictEqual(val5.valid, false);
+  assert.ok(val5.errors.some(e => e.includes('Invalid Top Screen dimensions')));
+  assert.throws(() => SceneCppExporter.export(badScene5), /validation failed/);
 });
 
 async function runAllTests() {

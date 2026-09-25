@@ -7,6 +7,8 @@ import { Hierarchy } from './editor/Hierarchy.js';
 import { PreviewRuntime } from './preview/PreviewRuntime.js';
 import { Validator } from './core/Validator.js';
 import { CodeGenerator } from './generator/CodeGenerator.js';
+import { SceneCppExporter } from './generator/SceneCppExporter.js';
+import { SceneValidator } from './generator/SceneValidator.js';
 import { DataStudioUI } from './data/DataStudioUI.js';
 import { BattleLabUI } from './battle/BattleLabUI.js';
 import { AppShell, AppStates } from './shell/AppShell.js';
@@ -236,35 +238,72 @@ class StudioApp {
       return;
     }
 
-    // Run validator first
-    const val = Validator.validateScreen(screen);
-    if (!val.valid) {
-      this.showValidationReport(val);
-      this.updateStatus('Validation failed. Please resolve errors before export.');
-      return;
-    }
+    const isScene = screen.durationFrames !== undefined || Array.isArray(screen.tracks);
 
-    try {
-      this.updateStatus('Generating C++ code...');
-      const generated = CodeGenerator.generate(screen);
-
-      // Save generated files to server
-      const res = await fetch('/api/generate-cpp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(generated)
-      });
-
-      let serverSaved = false;
-      if (res.ok) {
-        serverSaved = true;
-        this.updateStatus(`Generated C++ files written to ${generated.headerPath} & ${generated.sourcePath}`);
+    if (isScene) {
+      const val = SceneValidator.validate(screen);
+      if (!val.valid) {
+        this.showValidationReport(val);
+        this.updateStatus('Scene validation failed. Please resolve errors before export.');
+        return;
       }
 
-      this._showCodeModal(generated, serverSaved);
-    } catch (err) {
-      console.error('Error in code generator:', err);
-      alert('Code generation error: ' + err.message);
+      try {
+        this.updateStatus('Exporting Scene C++ Citro2D runtime bundle...');
+        const generated = SceneCppExporter.export(screen);
+
+        const res = await fetch('/api/generate-cpp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            className: generated.className,
+            hpp: generated.hpp,
+            cpp: generated.cpp,
+            files: generated.files
+          })
+        });
+
+        let serverSaved = false;
+        if (res.ok) {
+          serverSaved = true;
+          this.updateStatus(`Generated Citro2D scene bundle written to ${generated.headerPath}`);
+        }
+
+        this._showCodeModal(generated, serverSaved);
+      } catch (err) {
+        console.error('Error in scene exporter:', err);
+        alert('Scene export error: ' + err.message);
+      }
+    } else {
+      // Legacy screen export fallback
+      const val = Validator.validateScreen(screen);
+      if (!val.valid) {
+        this.showValidationReport(val);
+        this.updateStatus('Validation failed. Please resolve errors before export.');
+        return;
+      }
+
+      try {
+        this.updateStatus('Generating C++ code...');
+        const generated = CodeGenerator.generate(screen);
+
+        const res = await fetch('/api/generate-cpp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(generated)
+        });
+
+        let serverSaved = false;
+        if (res.ok) {
+          serverSaved = true;
+          this.updateStatus(`Generated C++ files written to ${generated.headerPath} & ${generated.sourcePath}`);
+        }
+
+        this._showCodeModal(generated, serverSaved);
+      } catch (err) {
+        console.error('Error in code generator:', err);
+        alert('Code generation error: ' + err.message);
+      }
     }
   }
 

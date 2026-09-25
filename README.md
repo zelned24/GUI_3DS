@@ -258,12 +258,58 @@ El generador garantiza que:
 
 ---
 
-## 8. Flujo de Validación y Exportación
+## 9. BETA-UI-3: C++ Animation Export & Citro2D Runtime
 
-1. **Validación:** Haz clic en **`🔍 Validate`**. El sistema verificará:
-   - Coordenadas enteras (pixel snapping).
-   - Bounds: detecta si algún elemento excede los 400px en Top o 320px en Bottom.
-   - Unicidad estricta de IDs.
-   - Referencias circulares o padres inexistentes.
-2. **Previsualización:** Haz clic en **`🎮 Preview`** para abrir el simulador 3DS interactivo. Prueba la navegación con la cruceta (D-Pad), botones físicos A/B/X/Y y toques en la pantalla inferior.
-3. **Generar C++:** Haz clic en **`⚡ Generate C++`**. El código generado se guardará directamente en `project/generated/` y se mostrará en pantalla listo para copiar o descargar.
+GUI_3DS convierte composiciones y animaciones visuales en código C++ nativo ejecutable sobre **Nintendo 3DS** mediante **devkitARM** y **Citro2D**.
+
+### Pipeline de Exportación y Evaluación
+
+```text
+Editor Scene JSON
+       ↓
+SceneModel (Nodes, Tracks, Keyframes, Markers, AudioCues)
+       ↓
+TimelineEvaluator (Evaluación efímera en JS sin mutar estado)
+       ↓
+SceneValidator (Validación estricta pre-export)
+       ↓
+Deterministic Export Model (Normalización y orden estable)
+       ↓
+SceneCppExporter
+       ├── SceneData.hpp / SceneData.cpp (Tablas estáticas compactas)
+       ├── SceneAssets.hpp / SceneAssets.cpp (Manifiesto de assets)
+       ├── SceneTimeline.hpp / SceneTimeline.cpp (Evaluador C++)
+       ├── Scene.hpp / Scene.cpp (Runtime Citro2D Dual-Screen)
+       └── SceneManifest.json
+       ↓
+Citro2D Runtime
+       ↓
+Nintendo 3DS (TOP 400x240, BOTTOM 320x240)
+```
+
+### Capas del Sistema de Animación
+
+| Capa | Estructura / Clase | Rol y Responsabilidad |
+|---|---|---|
+| **Authoring Data** | `SceneModel`, `UINode`, `AnimationTrack`, `Keyframe` | Modelo declarativo de autoría (JSON y JS). Define el grafo de nodos, canales de animación y fotogramas clave. |
+| **Exported Data** | `SceneData.hpp/.cpp`, `SceneAssets.hpp/.cpp` | Tablas de datos C++ compactas y estáticas (`SceneKeyframe`, `SceneTrack`, `SceneNodeData`, `SceneMarker`, `SceneAudioCue`). Sin dependencias del DOM ni JSON en runtime. |
+| **Runtime State** | `SceneTimeline`, `Scene`, `EvaluatedTransform` | Estado de ejecución y evaluación en la consola (`m_currentFrame`, transformaciones calculadas, renderizado Citro2D). |
+
+### Autoridad Temporal Única
+
+- **Fuente de verdad:** `uint32_t currentFrame` entero.
+- **Sin tiempo flotante acumulativo:** El progreso de la animación se gobierna exclusivamente por fotogramas enteros discretos, garantizando reproducibilidad exacta byte a byte y determinismo matemático.
+- **Subframe tick:** El acumulador flotante solo se utiliza para sincronizar el paso de tiempo delta (`dt`) con la cadencia de cuadros (`fps`), nunca como autoridad primaria del frame.
+
+### Curvas de Interpolación y Paridad Matemática
+
+El evaluador C++ (`SceneTimeline`) implementa exactamente las mismas curvas matemáticas que `Interpolation.js`:
+
+1. **STEP:** $t < 1.0 \implies 0.0, \; t = 1.0 \implies 1.0$
+2. **LINEAR:** $t$
+3. **EASE_IN:** $t^2$
+4. **EASE_OUT:** $t \cdot (2 - t)$
+5. **EASE_IN_OUT:** $t < 0.5 \implies 2t^2, \; t \ge 0.5 \implies -1 + (4 - 2t)t$
+
+La paridad matemática entre Preview JS y Runtime C++ está validada por tests automatizados con error máximo $\Delta < 10^{-6}$.
+

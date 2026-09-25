@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 2,
+  "sceneId": "PikachuEntrance",
+  "generated": true,
+  "assetCount": 2,
+  "assets": [
+    {
+      "assetId": "bg_arena_plains",
+      "romfsPath": "romfs/arenas/plains.t3x",
+      "format": "RGB565",
+      "width": 400,
+      "height": 240,
+      "sourceRepository": "https://github.com/pagefaultgames/pokerogue-assets",
+      "sourceRevision": "056a1f408f26a3be4fef243f7462cb43608c7928"
+    },
+    {
+      "assetId": "pokemon_sprite_25_front",
+      "romfsPath": "romfs/sprites/pokemon/25.t3x",
+      "format": "RGBA4444",
+      "width": 315,
+      "height": 315,
+      "sourceRepository": "https://github.com/pagefaultgames/pokerogue-assets",
+      "sourceRevision": "056a1f408f26a3be4fef243f7462cb43608c7928"
+    }
+  ]
+}
