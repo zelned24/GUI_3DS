@@ -20,7 +20,7 @@ ROMFS       := build/romfs
 ARCH        := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=cp15
 CFLAGS      := -g -Wall -O2 -mword-relocations \
                -fomit-frame-pointer -ffunction-sections \
-               $(ARCH)
+               $(ARCH) -D__3DS__ -D_3DS -DARM11
 
 CXXFLAGS    := $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++17
 

@@ -2,7 +2,7 @@
 #include "screens/SceneAssets.hpp"
 #include <cmath>
 
-#ifdef __3DS__
+#if defined(__arm__) || defined(__3DS__) || defined(_3DS)
 // Citro2D C2D_DrawImageAtRotatedScaled bridge to real C2D_DrawImageAtRotated
 static inline void C2D_DrawImageAtRotatedScaled(
     C2D_Image img,

@@ -2965,6 +2965,7 @@ test('BETA-UI-3.33: Real devkitARM compilation of Renderer2D', () => {
 
   const args = [
     '-march=armv6k', '-mtune=mpcore', '-mfloat-abi=hard', '-mtp=cp15',
+    '-D__3DS__', '-D_3DS', '-DARM11',
     '-O2', '-std=gnu++17', '-fno-rtti', '-fno-exceptions',
     `-I${path.join(__dirname, '../project/include')}`,
     `-I${path.join(__dirname, '../project/generated/include')}`,
