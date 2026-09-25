@@ -216,7 +216,7 @@ export class NativeParityRunner {
             visible: view.getInt32(ptr + 24, true) !== 0
           };
         } else {
-          const fallbackModel = SceneCppExporter.prepareExportModel(scene);
+          const fallbackModel = exportResult.exportModel;
           const fallbackMap = SceneCppExporter.evaluateExportedData(fallbackModel, frame);
           const fbNode = fallbackMap.get(node.id) || { transform: {}, visible: true };
           cppResult = {
