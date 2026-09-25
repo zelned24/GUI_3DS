@@ -33,7 +33,7 @@ LIBS        := -lcitro2d -lcitro3d -lctru -lm
 _3DSXTOOL   := $(shell which 3dsxtool 2>/dev/null || echo $(DEVKITPRO)/tools/bin/3dsxtool)
 
 CFILES      := $(foreach dir,$(SOURCES),$(wildcard $(dir)/*.c))
-CPPFILES    := $(foreach dir,$(SOURCES),$(wildcard $(dir)/*.cpp))
+CPPFILES    := $(filter-out %ExampleScreen.cpp,$(foreach dir,$(SOURCES),$(wildcard $(dir)/*.cpp)))
 OFILES      := $(CFILES:%.c=$(BUILD)/%.o) $(CPPFILES:%.cpp=$(BUILD)/%.o)
 
 .PHONY: all 3ds clean

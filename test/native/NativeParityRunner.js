@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { execFileSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 import { TimelineEvaluator } from '../../public/js/animation/TimelineEvaluator.js';
 import { SceneCppExporter } from '../../public/js/generator/SceneCppExporter.js';
 
@@ -112,6 +112,16 @@ export class NativeParityRunner {
       path.join(srcDir, 'SceneTimeline.cpp'),
       harnessCpp
     ];
+
+    // In Linux environments, remove bundled older libc from clang-linux-x64 if present so wasm-ld uses system glibc
+    if (!isWin) {
+      try {
+        const bundledLibc = path.join(rootDir, 'node_modules', 'clang-linux-x64', 'libc.so.6');
+        if (fs.existsSync(bundledLibc)) {
+          fs.unlinkSync(bundledLibc);
+        }
+      } catch (e) {}
+    }
 
     execFileSync(clangExe, compileArgs, { stdio: 'pipe' });
 

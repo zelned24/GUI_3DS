@@ -83,6 +83,8 @@ jobs:
           echo "  [2/10] INSTALLING NPM DEPENDENCIES                "
           echo "===================================================="
           npm ci
+          # Remove bundled stale libc if installed by clang-linux-x64 so wasm-ld links against system glibc
+          find node_modules/ -name "libc.so.6*" -delete 2>/dev/null || true
 
       - name: Run Full Test Suite in CI
         run: |
