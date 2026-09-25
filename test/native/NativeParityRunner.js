@@ -49,27 +49,40 @@ export class NativeParityRunner {
     let clangExe = null;
     const isWin = process.platform === 'win32';
     const binName = isWin ? 'clang.exe' : 'clang';
-    const candidates = [
-      path.join(rootDir, 'node_modules', '.bin', binName),
-      path.join(rootDir, 'node_modules', 'clang-wasm-win64', 'clang.exe'),
-      path.join(rootDir, 'node_modules', 'clang-wasm-linux-x64', 'clang'),
-      path.join(rootDir, 'node_modules', 'clang-wasm-linux-arm64', 'clang'),
-      path.join(rootDir, 'node_modules', 'clang-wasm-darwin-x64', 'clang'),
-      path.join(rootDir, 'node_modules', 'clang-wasm-darwin-arm64', 'clang')
-    ];
-    for (const c of candidates) {
-      if (fs.existsSync(c)) {
-        clangExe = c;
-        break;
-      }
-    }
-    if (!clangExe) {
+
+    // On non-Windows platforms (e.g. Linux CI runner), prefer host/system clang if available
+    if (!isWin) {
       try {
-        const whichCmd = isWin ? 'where' : 'which';
-        const out = execFileSync(whichCmd, ['clang'], { stdio: 'pipe' }).toString().trim().split(/\r?\n/)[0];
+        const out = execFileSync('which', ['clang'], { stdio: 'pipe' }).toString().trim().split(/\r?\n/)[0];
         if (out && fs.existsSync(out)) clangExe = out;
       } catch (e) {}
     }
+
+    if (!clangExe) {
+      const candidates = [
+        path.join(rootDir, 'node_modules', '.bin', binName),
+        path.join(rootDir, 'node_modules', 'clang-wasm-win64', 'clang.exe'),
+        path.join(rootDir, 'node_modules', 'clang-linux-x64', 'clang'),
+        path.join(rootDir, 'node_modules', 'clang-wasm-linux-x64', 'clang'),
+        path.join(rootDir, 'node_modules', 'clang-wasm-linux-arm64', 'clang'),
+        path.join(rootDir, 'node_modules', 'clang-wasm-darwin-x64', 'clang'),
+        path.join(rootDir, 'node_modules', 'clang-wasm-darwin-arm64', 'clang')
+      ];
+      for (const c of candidates) {
+        if (fs.existsSync(c)) {
+          clangExe = c;
+          break;
+        }
+      }
+    }
+
+    if (!clangExe && isWin) {
+      try {
+        const out = execFileSync('where', ['clang'], { stdio: 'pipe' }).toString().trim().split(/\r?\n/)[0];
+        if (out && fs.existsSync(out)) clangExe = out;
+      } catch (e) {}
+    }
+
     if (!clangExe) {
       throw new Error(`Clang executable not found in node_modules or PATH for platform ${process.platform}`);
     }

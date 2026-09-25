@@ -12,7 +12,8 @@
     "native-parity": "node test/native/run_native_parity.mjs",
     "3ds-test": "node test/native/check_3ds_toolchain.mjs",
     "3ds-build": "node test/native/run_3ds_build.mjs",
-    "native-test": "node test/run_native_build.mjs"
+    "native-test": "node test/run_native_build.mjs",
+    "postinstall": "node scripts/clean_clang_glibc.mjs"
   },
   "keywords": [
     "3ds",

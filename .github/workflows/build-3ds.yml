@@ -37,7 +37,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "Installing required devkitPro 3DS components without full system upgrade..."
-          dkp-pacman -S --needed --noconfirm 3ds-dev 3ds-citro2d 3ds-citro3d 3ds-tex3ds
+          dkp-pacman -S --needed --noconfirm 3ds-dev citro2d citro3d tex3ds 3dstools
 
       - name: Setup Node.js 24
         uses: actions/setup-node@v4

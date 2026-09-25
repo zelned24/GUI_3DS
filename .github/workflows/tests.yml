@@ -25,6 +25,11 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Install Host LLVM/Clang & LLD
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld
+
       - name: Install dependencies
         run: npm ci
 
