@@ -48,7 +48,7 @@ async function runNativeBuild() {
     path.join(genDir, 'src', 'screens', 'PikachuEntranceScene.cpp'),
     path.join(rootDir, 'project', 'src', 'gfx', 'renderer2d.cpp'),
     path.join(rootDir, 'test', 'native', 'native_build_entry.cpp'),
-    path.join(rootDir, 'project', 'include', 'compat', 'runtime.cpp')
+    path.join(rootDir, 'test', 'native', 'host_compat', 'runtime.cpp')
   ];
 
   for (const f of sourceFiles) {
@@ -69,7 +69,7 @@ async function runNativeBuild() {
     '-Wl,--no-entry',
     '-Wl,--export-all',
     `-I${path.join(genDir, 'include')}`,
-    `-I${path.join(rootDir, 'project', 'include', 'compat')}`,
+    `-I${path.join(rootDir, 'test', 'native', 'host_compat')}`,
     `-I${path.join(rootDir, 'project', 'include')}`,
     '-o', outWasm,
     ...sourceFiles
@@ -100,7 +100,7 @@ async function runNativeBuild() {
     '-fno-exceptions',
     '-c',
     `-I${path.join(genDir, 'include')}`,
-    `-I${path.join(rootDir, 'project', 'include', 'compat')}`,
+    `-I${path.join(rootDir, 'test', 'native', 'host_compat')}`,
     `-I${path.join(rootDir, 'project', 'include')}`,
     path.join(genDir, 'src', 'screens', 'PikachuEntranceScene.cpp'),
     '-o', armOut

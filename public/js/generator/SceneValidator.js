@@ -1,6 +1,7 @@
 import { InterpolationTypes } from '../animation/Keyframe.js';
 import { assetResolver } from '../data/AssetResolver.js';
 import { PokemonSpriteResolver } from '../data/PokemonSpriteResolver.js';
+import { AudioResolver } from '../data/AudioResolver.js';
 
 /**
  * SceneValidator - Strict pre-export validation for GUI_3DS scenes.
@@ -30,6 +31,7 @@ export class SceneValidator {
    * @param {Object} [options]
    * @param {AssetResolver} [options.assetResolver]
    * @param {PokemonSpriteResolver} [options.pokemonResolver]
+   * @param {AudioResolver} [options.audioResolver]
    * @returns {{ valid: boolean, errors: string[], warnings: string[] }}
    */
   static validate(scene, options = {}) {
@@ -37,6 +39,7 @@ export class SceneValidator {
     const warnings = [];
     const activeAssetResolver = options.assetResolver || assetResolver;
     const activePokemonResolver = options.pokemonResolver || new PokemonSpriteResolver();
+    const activeAudioResolver = options.audioResolver || new AudioResolver();
 
     if (!scene || typeof scene !== 'object') {
       return {
@@ -119,6 +122,8 @@ export class SceneValidator {
             const resolved = activeAssetResolver.resolve(assetId);
             if (!resolved) {
               errors.push(`ImageNode "${node.id}" references unresolvable asset "${assetId}". Assets must exist in AssetResolver catalog or be registered local assets.`);
+            } else if (!resolved.hash || resolved.hash.toLowerCase().includes('placeholder') || resolved.hash.toLowerCase().includes('dummy')) {
+              errors.push(`Asset "${assetId}" has unverified or placeholder integrity hash. Real provenance required.`);
             }
           }
         }
@@ -132,6 +137,11 @@ export class SceneValidator {
             const pkmnRes = activePokemonResolver.resolvePokemonSprite(Number(dexId));
             if (!pkmnRes || !pkmnRes.exists) {
               errors.push(`PokemonSpriteNode "${node.id}" references unindexed or non-existent Pokemon dex ID #${dexId}`);
+            } else {
+              const h = pkmnRes.hash || pkmnRes.jsonHash;
+              if (!h || h.toLowerCase().includes('placeholder') || h.toLowerCase().includes('dummy')) {
+                errors.push(`Pokemon dex ID #${dexId} has unverified or placeholder integrity hash.`);
+              }
             }
           }
         }
@@ -288,6 +298,13 @@ export class SceneValidator {
         }
         if (!cue.asset || typeof cue.asset !== 'string' || cue.asset.trim() === '') {
           errors.push(`Audio cue index ${c} at frame ${cue.frame} has empty asset reference`);
+        } else {
+          const audioRes = activeAudioResolver.resolve(cue.asset);
+          if (!audioRes) {
+            errors.push(`Audio cue asset "${cue.asset}" at frame ${cue.frame} is not registered in AudioResolver or has no verified provenance. Arbitrary audio paths are prohibited.`);
+          } else if (!audioRes.hash || audioRes.hash.toLowerCase().includes('placeholder') || audioRes.hash.toLowerCase().includes('dummy')) {
+            errors.push(`Audio cue asset "${cue.asset}" has unverified or placeholder integrity hash.`);
+          }
         }
       }
     }

@@ -1,0 +1,61 @@
+# GUI_3DS - devkitARM / Citro2D Real 3DS Build System
+# Conforms to official devkitPro 3DS rules
+
+ifeq ($(strip $(DEVKITPRO)),)
+$(error "Please set DEVKITPRO in your environment. export DEVKITPRO=<path to>devkitPro. BLOCKED — missing toolchain/dependency")
+endif
+
+ifeq ($(strip $(DEVKITARM)),)
+$(error "Please set DEVKITARM in your environment. export DEVKITARM=<path to>devkitARM. BLOCKED — missing toolchain/dependency")
+endif
+
+include $(DEVKITARM)/3ds_rules
+
+TARGET      := GUI_3DS
+BUILD       := build
+SOURCES     := project/src/gfx project/generated/src/screens test/native
+INCLUDES    := project/include project/generated/include $(CTRULIB)/include $(DEVKITPRO)/libctru/include
+ROMFS       := build/romfs
+
+ARCH        := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=cp15
+CFLAGS      := -g -Wall -O2 -mword-relocations \
+               -fomit-frame-pointer -ffunction-sections \
+               $(ARCH)
+
+CXXFLAGS    := $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++17
+
+ASFLAGS     := -g $(ARCH)
+LDFLAGS     := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(BUILD)/$(TARGET).map
+
+LIBS        := -lcitro2d -lcitro3d -lctru -lm
+
+CFILES      := $(foreach dir,$(SOURCES),$(wildcard $(dir)/*.c))
+CPPFILES    := $(foreach dir,$(SOURCES),$(wildcard $(dir)/*.cpp))
+OFILES      := $(CFILES:%.c=$(BUILD)/%.o) $(CPPFILES:%.cpp=$(BUILD)/%.o)
+
+.PHONY: all 3ds clean
+
+all: 3ds
+
+3ds: $(BUILD)/$(TARGET).3dsx
+
+$(BUILD)/$(TARGET).3dsx: $(BUILD)/$(TARGET).elf
+	@echo "Creating 3DSX with RomFS using 3dsxtool..."
+	@3dsxtool $< $@ $(if $(wildcard $(ROMFS)),--romfs=$(ROMFS),)
+
+$(BUILD)/$(TARGET).elf: $(OFILES)
+	@echo "Linking 3DS ELF..."
+	@$(CXX) $(LDFLAGS) $(OFILES) $(LIBS) -o $@
+
+$(BUILD)/%.o: %.cpp
+	@mkdir -p $(dir $@)
+	@echo "Compiling $<..."
+	@$(CXX) $(CXXFLAGS) $(foreach inc,$(INCLUDES),-I$(inc)) -c $< -o $@
+
+$(BUILD)/%.o: %.c
+	@mkdir -p $(dir $@)
+	@echo "Compiling $<..."
+	@$(CC) $(CFLAGS) $(foreach inc,$(INCLUDES),-I$(inc)) -c $< -o $@
+
+clean:
+	@rm -rf $(BUILD)

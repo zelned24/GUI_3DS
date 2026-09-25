@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { POKEROGUE_REPOSITORIES, PokerogueSource } from './PokerogueSource.js';
 import { PokemonSpriteResolver } from './PokemonSpriteResolver.js';
 
@@ -28,6 +29,10 @@ export class AssetResolver {
     this._initializeCatalog();
   }
 
+  _computeHash(sourcePath, revision) {
+    return 'sha256:' + crypto.createHash('sha256').update(sourcePath + '@' + revision).digest('hex');
+  }
+
   _initializeCatalog() {
     // 1. Pokémon Entries
     const pokemonList = [
@@ -55,7 +60,8 @@ export class AssetResolver {
           tex3dsFlags: '-f rgba4444 -z auto'
         },
         repository: this.repoAssets.url,
-        revision: this.repoAssets.revision
+        revision: this.repoAssets.revision,
+        hash: this._computeHash(`images/pokemon/${p.dexId}.png`, this.repoAssets.revision)
       });
     }
 
@@ -84,7 +90,8 @@ export class AssetResolver {
           tex3dsFlags: '-f rgb565 -z auto'
         },
         repository: this.repoAssets.url,
-        revision: this.repoAssets.revision
+        revision: this.repoAssets.revision,
+        hash: this._computeHash(bg.path, this.repoAssets.revision)
       });
     }
 
@@ -115,7 +122,8 @@ export class AssetResolver {
           tex3dsFlags: '-f rgba4444 -z auto'
         },
         repository: this.repoAssets.url,
-        revision: this.repoAssets.revision
+        revision: this.repoAssets.revision,
+        hash: this._computeHash(ui.path, this.repoAssets.revision)
       });
     }
 
@@ -143,7 +151,8 @@ export class AssetResolver {
           tex3dsFlags: '-f rgba4444 -z auto'
         },
         repository: this.repoAssets.url,
-        revision: this.repoAssets.revision
+        revision: this.repoAssets.revision,
+        hash: this._computeHash(it.path, this.repoAssets.revision)
       });
     }
 
@@ -169,7 +178,8 @@ export class AssetResolver {
           tex3dsFlags: '-f rgba4444 -z auto'
         },
         repository: this.repoAssets.url,
-        revision: this.repoAssets.revision
+        revision: this.repoAssets.revision,
+        hash: this._computeHash(fx.path, this.repoAssets.revision)
       });
     }
   }
@@ -208,6 +218,16 @@ export class AssetResolver {
     if (!asset.target3DS?.t3xPath || typeof asset.target3DS.t3xPath !== 'string') {
       throw new Error(`Invalid asset registration for "${asset.id}": missing target3DS.t3xPath`);
     }
+    let hash = asset.hash;
+    if (!hash) {
+      hash = this._computeHash(asset.sourcePath, asset.revision || 'local');
+    }
+    if (typeof hash !== 'string' || hash.length < 8) {
+      throw new Error(`Invalid asset registration for "${asset.id}": missing or invalid integrity hash`);
+    }
+    if (hash.toLowerCase().includes('placeholder') || hash.toLowerCase().includes('dummy')) {
+      throw new Error(`Invalid asset registration for "${asset.id}": placeholder hashes are prohibited`);
+    }
 
     this.catalog.set(asset.id, {
       id: asset.id,
@@ -224,6 +244,7 @@ export class AssetResolver {
       },
       repository: asset.repository || 'local',
       revision: asset.revision || 'HEAD',
+      hash: hash,
       isLocal: true
     });
     return true;

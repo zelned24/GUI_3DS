@@ -41,7 +41,7 @@ export class NativeParityRunner {
 
     const wasmOutPath = path.join(buildDir, 'harness.wasm');
     const harnessCpp = path.join(__dirname, 'native_parity_harness.cpp');
-    const compatInclude = path.join(rootDir, 'project', 'include', 'compat');
+    const compatInclude = path.join(rootDir, 'test', 'native', 'host_compat');
     const projectInclude = path.join(rootDir, 'project', 'include');
     const buildInclude = path.join(buildDir, 'include');
 

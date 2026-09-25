@@ -1,15 +1,21 @@
-# GUI_3DS - Makefile
-# Targets for testing and native Citro2D / devkitARM compilation verification
+# GUI_3DS - Root Makefile
+# Provides targets for testing, host native parity, 3DS toolchain verification, and real 3DS build
 
-.PHONY: all test native-test clean
+.PHONY: all test native-parity 3ds-test 3ds clean
 
-all: test native-test
+all: test native-parity
 
 test:
 	npm test
 
-native-test:
-	node test/run_native_build.mjs
+native-parity:
+	node test/native/run_native_parity.mjs
+
+3ds-test:
+	node test/native/check_3ds_toolchain.mjs
+
+3ds:
+	node test/native/run_3ds_build.mjs
 
 clean:
-	node -e "const fs = require('fs'); fs.rmSync('test/native/build', { recursive: true, force: true });"
+	node -e "const fs = require('fs'); fs.rmSync('build', { recursive: true, force: true }); fs.rmSync('test/native/build', { recursive: true, force: true });"

@@ -2,6 +2,7 @@ import { SceneValidator } from './SceneValidator.js';
 import { InterpolationTypes } from '../animation/Keyframe.js';
 import { AssetResolver, assetResolver as defaultAssetResolver } from '../data/AssetResolver.js';
 import { PokemonSpriteResolver } from '../data/PokemonSpriteResolver.js';
+import { AudioResolver } from '../data/AudioResolver.js';
 
 /**
  * SceneCppExporter - Pure, deterministic C++ generator and Citro2D runtime exporter.
@@ -216,6 +217,7 @@ export class SceneCppExporter {
   static _buildAssetManifest(scene, options = {}) {
     const assetResolver = options.assetResolver || defaultAssetResolver;
     const pokemonResolver = options.pokemonResolver || new PokemonSpriteResolver();
+    const audioResolver = options.audioResolver || new AudioResolver();
     const assetMap = new Map();
 
     const rawNodes = scene.nodes || scene.components || [];
@@ -265,18 +267,22 @@ export class SceneCppExporter {
       }
     }
 
-    // Audio cues
+    // Audio cues (Strict Audio Provenance)
     if (Array.isArray(scene.audioCues)) {
       for (const cue of scene.audioCues) {
         if (cue.asset && !assetMap.has(cue.asset)) {
+          const audioRes = audioResolver.resolve(cue.asset);
+          if (!audioRes) {
+            throw new Error(`Cannot export scene: audio asset "${cue.asset}" in audioCue at frame ${cue.frame} has no verified provenance. Arbitrary audio paths are prohibited.`);
+          }
           assetMap.set(cue.asset, {
             assetId: cue.asset,
-            romfsPath: `romfs/audio/${cue.asset}.bcstm`,
-            format: 'BCSTM',
+            romfsPath: audioRes.romfsPath,
+            format: audioRes.format || 'BCSTM',
             width: 0,
             height: 0,
-            sourceRepository: 'audio-catalog',
-            sourceRevision: 'HEAD'
+            sourceRepository: audioRes.repository || 'pokerogue-assets',
+            sourceRevision: audioRes.revision || '056a1f4'
           });
         }
       }

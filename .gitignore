@@ -4,4 +4,11 @@ Thumbs.db
 *.log
 *.wasm
 *.o
+*.elf
+*.3dsx
+*.map
+build/
 test/native/build/
+test/build_romfs_*/
+test/native/host_compat/*.wasm
+test/native/host_compat/*.o
