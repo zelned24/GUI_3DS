@@ -29,6 +29,8 @@ jobs:
         run: |
           set -euo pipefail
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          echo "/opt/devkitpro/tools/bin" >> $GITHUB_PATH
+          echo "/opt/devkitpro/devkitARM/bin" >> $GITHUB_PATH
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -55,18 +57,6 @@ jobs:
           echo "DEVKITARM: $DEVKITARM"
           echo "CTRULIB:   $CTRULIB"
           
-          echo "Current PATH: $PATH"
-          echo "Listing /opt/devkitpro:"
-          ls -la /opt/devkitpro || true
-          echo "Searching for arm-none-eabi-gcc and tex3ds:"
-          find /opt/devkitpro -name "arm-none-eabi-gcc" 2>/dev/null || true
-          find /opt/devkitpro -name "tex3ds" 2>/dev/null || true
-          find /opt/devkitpro -name "3dsxtool" 2>/dev/null || true
-
-          # Ensure PATH includes devkitARM and devkitPro tools
-          export PATH="/opt/devkitpro/tools/bin:/opt/devkitpro/devkitARM/bin:$PATH"
-          echo "$PATH" >> $GITHUB_PATH
-
           command -v arm-none-eabi-gcc
           command -v arm-none-eabi-g++
           command -v 3dsxtool

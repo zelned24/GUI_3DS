@@ -35,7 +35,6 @@ const binaries = [
   'arm-none-eabi-gcc',
   'arm-none-eabi-g++',
   '3dsxtool',
-  'makerom',
   'tex3ds'
 ];
 
