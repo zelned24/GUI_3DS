@@ -31,6 +31,13 @@ LDFLAGS     := -specs=3dsx.specs -g $(ARCH) $(LIBDIRS) -Wl,-Map,$(BUILD)/$(TARGE
 LIBS        := -lcitro2d -lcitro3d -lctru -lm
 
 _3DSXTOOL   := $(shell which 3dsxtool 2>/dev/null || echo $(DEVKITPRO)/tools/bin/3dsxtool)
+_SMDHTOOL   := $(shell which smdhtool 2>/dev/null || echo $(DEVKITPRO)/tools/bin/smdhtool)
+
+_ICON       := $(firstword $(wildcard icon.png $(CTRULIB)/default_icon.png $(DEVKITPRO)/libctru/default_icon.png))
+
+APP_TITLE       := GUI_3DS
+APP_DESCRIPTION := PokéRogue 3DS Scene Composer
+APP_AUTHOR      := zelned24
 
 CFILES      := $(foreach dir,$(SOURCES),$(wildcard $(dir)/*.c))
 CPPFILES    := $(filter-out %ExampleScreen.cpp,$(foreach dir,$(SOURCES),$(wildcard $(dir)/*.cpp)))
@@ -42,13 +49,18 @@ all: 3ds
 
 3ds: $(BUILD)/$(TARGET).3dsx
 
-$(BUILD)/$(TARGET).3dsx: $(BUILD)/$(TARGET).elf
+$(BUILD)/$(TARGET).smdh: $(_ICON)
+	@mkdir -p $(dir $@)
+	@echo "Creating SMDH descriptor using smdhtool..."
+	$(_SMDHTOOL) --create "$(APP_TITLE)" "$(APP_DESCRIPTION)" "$(APP_AUTHOR)" $(_ICON) $@
+
+$(BUILD)/$(TARGET).3dsx: $(BUILD)/$(TARGET).elf $(BUILD)/$(TARGET).smdh
 	@echo "Creating 3DSX with RomFS using 3dsxtool..."
-	@$(_3DSXTOOL) $< $@ $(if $(wildcard $(ROMFS)),--romfs=$(ROMFS),)
+	$(_3DSXTOOL) $< $@ --smdh=$(BUILD)/$(TARGET).smdh $(if $(wildcard $(ROMFS)),--romfs=$(ROMFS),)
 
 $(BUILD)/$(TARGET).elf: $(OFILES)
 	@echo "Linking 3DS ELF..."
-	@$(CXX) $(LDFLAGS) $(OFILES) $(LIBS) -o $@
+	$(CXX) $(LDFLAGS) $(OFILES) $(LIBS) -o $@
 
 $(BUILD)/%.o: %.cpp
 	@mkdir -p $(dir $@)
