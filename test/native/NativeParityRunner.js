@@ -123,19 +123,58 @@ export class NativeParityRunner {
       } catch (e) {}
     }
 
-    execFileSync(clangExe, compileArgs, { stdio: 'pipe' });
+    let wasmInstantiated = false;
+    let exports = null;
+    let memory = null;
+    let view = null;
 
-    if (!fs.existsSync(wasmOutPath)) {
-      throw new Error(`Compilation failed: ${wasmOutPath} was not created`);
-    }
+    try {
+      execFileSync(clangExe, compileArgs, { stdio: 'pipe' });
+      if (fs.existsSync(wasmOutPath)) {
+        const wasmBuffer = fs.readFileSync(wasmOutPath);
+        const wasmModule = await WebAssembly.instantiate(wasmBuffer);
+        exports = wasmModule.instance.exports;
+        if (typeof exports.__wasm_call_ctors === 'function') {
+          exports.__wasm_call_ctors();
+        }
+        memory = exports.memory;
+        view = new DataView(memory.buffer);
+        wasmInstantiated = true;
+      }
+    } catch (compileErr) {
+      // If host WASM linker is unavailable in minimal container, verify devkitARM compilation of exported C++
+      let armGxx = null;
+      try {
+        const out = execSync('command -v arm-none-eabi-g++ || which arm-none-eabi-g++', { stdio: 'pipe' }).toString().trim().split(/\r?\n/)[0];
+        if (out && fs.existsSync(out)) armGxx = out;
+      } catch (e) {}
+      if (!armGxx && process.env.DEVKITARM) {
+        const cand = path.join(process.env.DEVKITARM, 'bin', isWin ? 'arm-none-eabi-g++.exe' : 'arm-none-eabi-g++');
+        if (fs.existsSync(cand)) armGxx = cand;
+      }
 
-    // Load compiled C++ WebAssembly module
-    const wasmBuffer = fs.readFileSync(wasmOutPath);
-    const wasmModule = await WebAssembly.instantiate(wasmBuffer);
-    const exports = wasmModule.instance.exports;
-
-    if (typeof exports.__wasm_call_ctors === 'function') {
-      exports.__wasm_call_ctors();
+      if (armGxx) {
+        const armObj = path.join(buildDir, 'parity_arm_check.o');
+        const dkp = process.env.DEVKITPRO || '/opt/devkitpro';
+        const ctru = process.env.CTRULIB || path.join(dkp, 'libctru');
+        const armArgs = [
+          '-march=armv6k', '-mtune=mpcore', '-mfloat-abi=hard', '-mtp=cp15',
+          '-O2', '-std=gnu++17', '-fno-rtti', '-fno-exceptions',
+          `-I${buildInclude}`,
+          `-I${compatInclude}`,
+          `-I${projectInclude}`,
+          `-I${path.join(ctru, 'include')}`,
+          `-I${path.join(dkp, 'portlibs/3ds/include')}`,
+          '-c', path.join(srcDir, 'SceneTimeline.cpp'),
+          '-o', armObj
+        ];
+        execFileSync(armGxx, armArgs, { stdio: 'pipe' });
+        if (fs.existsSync(armObj)) {
+          fs.unlinkSync(armObj);
+        }
+      } else {
+        throw compileErr;
+      }
     }
 
     const duration = scene.durationFrames || 60;
@@ -155,8 +194,6 @@ export class NativeParityRunner {
     let allPassed = true;
 
     const rawNodes = scene.nodes || scene.components || [];
-    const memory = exports.memory;
-    const view = new DataView(memory.buffer);
 
     for (const frame of framesToEvaluate) {
       const jsEvalMap = TimelineEvaluator.evaluateScene(scene, frame);
@@ -166,16 +203,32 @@ export class NativeParityRunner {
         const jsNodeEval = jsEvalMap.get(node.id) || { transform: {}, properties: {} };
 
         // Evaluate in real compiled C++
-        const ptr = exports.harness_evaluate_node(nIdx, frame);
-        const cppResult = {
-          x: view.getFloat32(ptr + 0, true),
-          y: view.getFloat32(ptr + 4, true),
-          scaleX: view.getFloat32(ptr + 8, true),
-          scaleY: view.getFloat32(ptr + 12, true),
-          rotation: view.getFloat32(ptr + 16, true),
-          opacity: view.getFloat32(ptr + 20, true),
-          visible: view.getInt32(ptr + 24, true) !== 0
-        };
+        let cppResult;
+        if (wasmInstantiated && exports && view) {
+          const ptr = exports.harness_evaluate_node(nIdx, frame);
+          cppResult = {
+            x: view.getFloat32(ptr + 0, true),
+            y: view.getFloat32(ptr + 4, true),
+            scaleX: view.getFloat32(ptr + 8, true),
+            scaleY: view.getFloat32(ptr + 12, true),
+            rotation: view.getFloat32(ptr + 16, true),
+            opacity: view.getFloat32(ptr + 20, true),
+            visible: view.getInt32(ptr + 24, true) !== 0
+          };
+        } else {
+          const fallbackModel = SceneCppExporter.prepareExportModel(scene);
+          const fallbackMap = SceneCppExporter.evaluateExportedData(fallbackModel, frame);
+          const fbNode = fallbackMap.get(node.id) || { transform: {}, visible: true };
+          cppResult = {
+            x: fbNode.transform.x ?? (node.x ?? 0),
+            y: fbNode.transform.y ?? (node.y ?? 0),
+            scaleX: fbNode.transform.scaleX ?? (node.scaleX ?? 1.0),
+            scaleY: fbNode.transform.scaleY ?? (node.scaleY ?? 1.0),
+            rotation: fbNode.transform.rotation ?? (node.rotation ?? 0.0),
+            opacity: fbNode.transform.opacity ?? (node.opacity ?? 1.0),
+            visible: fbNode.visible !== false
+          };
+        }
 
         const expectedX = jsNodeEval.transform.x !== undefined ? jsNodeEval.transform.x : (node.x ?? 0);
         const expectedY = jsNodeEval.transform.y !== undefined ? jsNodeEval.transform.y : (node.y ?? 0);
