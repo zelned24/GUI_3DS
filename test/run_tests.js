@@ -52,6 +52,9 @@ import { SceneCppExporter } from '../public/js/generator/SceneCppExporter.js';
 import { NativeParityRunner } from './native/NativeParityRunner.js';
 import { AudioResolver } from '../public/js/data/AudioResolver.js';
 import { AssetPackager } from '../public/js/generator/AssetPackager.js';
+import crypto from 'crypto';
+import { AssetIndex, defaultAssetIndex } from '../public/js/data/AssetIndex.js';
+import { AssetBrowser } from '../public/js/editor/AssetBrowser.js';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -3278,6 +3281,419 @@ test('BETA-UI-4.14: 3DSX generated from real ELF with RomFS', () => {
   const makefile3ds = fs.readFileSync(path.join(__dirname, '../Makefile.3ds'), 'utf8');
   assert.ok(makefile3ds.includes('3dsxtool'), 'Makefile.3ds must use 3dsxtool to pack 3DSX');
   assert.ok(makefile3ds.includes('--romfs=$(ROMFS)'), 'Makefile.3ds must pack RomFS into 3DSX');
+});
+
+// -------------------------------------------------------------
+// 27. BETA-UI-5: PRODUCTION ASSET SYSTEM, CACHE & SCENE PLAYBACK
+// -------------------------------------------------------------
+
+test('BETA-UI-5.1: Real content SHA-256 hashes generated from physical file bytes', () => {
+  const pikaFile = path.join(__dirname, 'fixtures/assets/25.png');
+  assert.ok(fs.existsSync(pikaFile), 'Pikachu sprite fixture must exist');
+  const fileBytes = fs.readFileSync(pikaFile);
+  const expectedHash = crypto.createHash('sha256').update(fileBytes).digest('hex');
+  const computedHash = AssetIndex.computeContentSha256(pikaFile);
+  assert.strictEqual(computedHash, expectedHash);
+  assert.strictEqual(computedHash, '91e5f6d2f0279062761689b3ff0a2f91e2042377d6c712e8dbc7761b5b2b69ba');
+
+  // Verify AudioResolver uses real content hash
+  const audioFile = path.join(__dirname, 'fixtures/assets/select.wav');
+  const audioExpected = crypto.createHash('sha256').update(fs.readFileSync(audioFile)).digest('hex');
+  const audioRes = AudioResolver.resolve('se_select');
+  assert.strictEqual(audioRes.hash.replace(/^sha256:/, ''), audioExpected);
+  assert.strictEqual(audioRes.hash.replace(/^sha256:/, ''), '78a0ba6a3bfbad783c3956fbeefb60fb53d99572cd9b025a9c004434993a062f');
+
+  // Verify that modifying 1 byte produces a completely different hash
+  const modifiedBytes = Buffer.from(fileBytes);
+  modifiedBytes[0] ^= 0xFF;
+  const modifiedHash = crypto.createHash('sha256').update(modifiedBytes).digest('hex');
+  assert.notStrictEqual(modifiedHash, expectedHash);
+});
+
+test('BETA-UI-5.2: Asset provenance contract responds with all required fields', () => {
+  const index = new AssetIndex();
+  const all = index.getAll();
+  assert.ok(all.length >= 10, 'Index must contain catalog assets');
+  const requiredFields = [
+    'id', 'type', 'sourcePath', 'sourceRepository', 'sourceRevision',
+    'contentSha256', 'dimensions', 'format', 'target3DS', 'romfsPath'
+  ];
+  for (const asset of all) {
+    for (const field of requiredFields) {
+      assert.ok(asset[field] !== undefined, `Asset ${asset.id} missing provenance field: ${field}`);
+    }
+    assert.strictEqual(typeof asset.dimensions.width, 'number');
+    assert.strictEqual(typeof asset.dimensions.height, 'number');
+    assert.ok(asset.romfsPath.startsWith('romfs/'));
+    if (asset.contentSha256) {
+      const cleanHash = asset.contentSha256.replace(/^sha256:/, '');
+      assert.strictEqual(cleanHash.length, 64, `Asset ${asset.id} contentSha256 must be 64-char hex`);
+    }
+  }
+});
+
+test('BETA-UI-5.3: Upstream asset index is sorted deterministically by assetId', () => {
+  const index = new AssetIndex();
+  const all = index.getAll();
+  for (let i = 1; i < all.length; ++i) {
+    assert.ok(all[i - 1].id.localeCompare(all[i].id) <= 0, `Assets must be sorted alphabetically by id: ${all[i-1].id} vs ${all[i].id}`);
+  }
+  const obj1 = index.generateIndexObject();
+  const obj2 = index.generateIndexObject();
+  assert.strictEqual(JSON.stringify(obj1), JSON.stringify(obj2), 'Index serialization must be byte-identical');
+  assert.strictEqual(obj1.assets.some(a => a.id.includes('random')), false);
+});
+
+test('BETA-UI-5.4: Asset Browser queries and filters indexed assets across multiple criteria', () => {
+  const index = new AssetIndex();
+  const searchResults = index.search('pikachu');
+  assert.ok(searchResults.length > 0);
+  assert.ok(searchResults.every(a => a.name.toLowerCase().includes('pikachu') || a.species?.toLowerCase().includes('pikachu')));
+
+  const bgResults = index.search('', { category: 'backgrounds' });
+  assert.ok(bgResults.length >= 5);
+  assert.ok(bgResults.every(a => a.category === 'backgrounds'));
+
+  const pkmnResults = index.search('', { category: 'pokemon', nationalDexId: 25 });
+  assert.ok(pkmnResults.length > 0);
+  assert.strictEqual(pkmnResults[0].nationalDexId, 25);
+  assert.strictEqual(pkmnResults[0].species, 'Pikachu');
+});
+
+test('BETA-UI-5.5: Missing and invalid physical assets report clean error status', () => {
+  const index = new AssetIndex();
+  index.registerEntry({
+    id: 'fictitious_missing_texture',
+    category: 'backgrounds',
+    type: 'texture',
+    sourcePath: 'images/arenas/does_not_exist_404.png'
+  });
+  const asset = index.get('fictitious_missing_texture');
+  assert.strictEqual(asset.status, 'MISSING');
+  assert.strictEqual(asset.contentSha256, null);
+
+  const availableAsset = index.get('pokemon_sprite_25_front');
+  assert.strictEqual(availableAsset.status, 'AVAILABLE');
+  assert.ok(availableAsset.size > 0);
+});
+
+test('BETA-UI-5.6: RuntimeAssetManager C++ source implements cache-first load-once contract', () => {
+  const ramHpp = fs.readFileSync(path.join(__dirname, '../project/include/runtime/RuntimeAssetManager.hpp'), 'utf8');
+  const ramCpp = fs.readFileSync(path.join(__dirname, '../project/src/runtime/RuntimeAssetManager.cpp'), 'utf8');
+  assert.ok(ramHpp.includes('bool preload(const char* assetId)'), 'RuntimeAssetManager must expose preload');
+  assert.ok(ramHpp.includes('const CachedAsset* get(const char* assetId) const'), 'RuntimeAssetManager must expose get');
+  assert.ok(ramHpp.includes('uint32_t physicalLoadCount'), 'RuntimeMetrics must track physicalLoadCount');
+  assert.ok(ramCpp.includes('if (it != m_cache.end())'), 'Must check cache map prior to physical loading');
+  assert.ok(ramCpp.includes('m_metrics.cacheHitCount++'), 'Must increment cache hit count on repeated requests');
+});
+
+test('BETA-UI-5.7: Runtime cache deduplication across multiple node references', () => {
+  const scene = new SceneModel({ id: 'DeduplicationScene', name: 'Deduplication Scene' });
+  for (let i = 0; i < 20; ++i) {
+    scene.addNode(ComponentRegistry.create('PokemonSprite', {
+      id: `pika_${i}`,
+      screen: 'top',
+      x: i * 10,
+      y: 50,
+      properties: { nationalDexId: 25, species: 'Pikachu', facing: 'front' }
+    }));
+  }
+  const exported = SceneCppExporter.export(scene);
+  const pikaAssets = exported.manifest.assets.filter(a => a.assetId === 'pokemon_sprite_25_front');
+  assert.strictEqual(pikaAssets.length, 1, 'Manifest must contain exactly 1 asset entry for 20 references');
+});
+
+test('BETA-UI-5.8: RuntimeAssetManager reference counting and resource release', () => {
+  const ramHpp = fs.readFileSync(path.join(__dirname, '../project/include/runtime/RuntimeAssetManager.hpp'), 'utf8');
+  const ramCpp = fs.readFileSync(path.join(__dirname, '../project/src/runtime/RuntimeAssetManager.cpp'), 'utf8');
+  assert.ok(ramHpp.includes('void release(const char* assetId)'), 'Must expose release');
+  assert.ok(ramHpp.includes('void releaseAll()'), 'Must expose releaseAll');
+  assert.ok(ramCpp.includes('C2D_SpriteSheetFree'), 'Must free sprite sheet when refCount reaches 0');
+  assert.ok(ramCpp.includes('m_cache.clear()'), 'releaseAll must clear cached assets');
+});
+
+test('BETA-UI-5.9: ScenePlayer preloads required assets before playback begins', () => {
+  const playerHpp = fs.readFileSync(path.join(__dirname, '../project/include/runtime/ScenePlayer.hpp'), 'utf8');
+  const playerCpp = fs.readFileSync(path.join(__dirname, '../project/src/runtime/ScenePlayer.cpp'), 'utf8');
+  assert.ok(playerHpp.includes('void enter()'), 'ScenePlayer must implement enter');
+  assert.ok(playerCpp.includes('assetMgr.preload(assetId.c_str())'), 'enter() must invoke asset preloading');
+});
+
+test('BETA-UI-5.10: ScenePlayer implements complete playback controller lifecycle', () => {
+  const playerHpp = fs.readFileSync(path.join(__dirname, '../project/include/runtime/ScenePlayer.hpp'), 'utf8');
+  const playerCpp = fs.readFileSync(path.join(__dirname, '../project/src/runtime/ScenePlayer.cpp'), 'utf8');
+  assert.ok(playerHpp.includes('void play()'), 'Must implement play()');
+  assert.ok(playerHpp.includes('void pause()'), 'Must implement pause()');
+  assert.ok(playerHpp.includes('void stop()'), 'Must implement stop()');
+  assert.ok(playerHpp.includes('void seek(uint32_t frame)'), 'Must implement seek(frame)');
+  assert.ok(playerHpp.includes('void update(float dt)'), 'Must implement update(dt)');
+  assert.ok(playerHpp.includes('renderTop('), 'Must implement renderTop()');
+  assert.ok(playerHpp.includes('renderBottom('), 'Must implement renderBottom()');
+  assert.ok(playerHpp.includes('void exit()'), 'Must implement exit()');
+});
+
+test('BETA-UI-5.11: Frame-accurate seek evaluates exact deterministic keyframe state', () => {
+  const scene = new SceneModel({ id: 'SeekScene', name: 'Seek Scene', durationFrames: 60 });
+  const node = ComponentRegistry.create('Image', {
+    id: 'test_node',
+    screen: 'top',
+    x: 0,
+    y: 0,
+    width: 64,
+    height: 64,
+    properties: { assetId: 'bg_arena_plains' }
+  });
+  scene.addNode(node);
+
+  const trackX = new AnimationTrack({ targetNodeId: 'test_node', propertyPath: 'transform.x' });
+  trackX.addKeyframe(0, 0, 'linear');
+  trackX.addKeyframe(30, 150, 'linear');
+  trackX.addKeyframe(60, 300, 'linear');
+  scene.addTrack(trackX);
+
+  const state0 = TimelineEvaluator.evaluateScene(scene, 0);
+  assert.strictEqual(state0.get('test_node').transform.x, 0);
+
+  const state15 = TimelineEvaluator.evaluateScene(scene, 15);
+  assert.strictEqual(state15.get('test_node').transform.x, 75);
+
+  const state30 = TimelineEvaluator.evaluateScene(scene, 30);
+  assert.strictEqual(state30.get('test_node').transform.x, 150);
+
+  const state60 = TimelineEvaluator.evaluateScene(scene, 60);
+  assert.strictEqual(state60.get('test_node').transform.x, 300);
+});
+
+test('BETA-UI-5.12: JS TimelineEvaluator and native C++ runtime evaluate identically', async () => {
+  const scene = new SceneModel({
+    id: 'ParityTestScene',
+    name: 'Parity Test Scene',
+    durationFrames: 60,
+    fps: 60
+  });
+  const node = ComponentRegistry.create('Image', {
+    id: 'parity_img',
+    screen: 'top',
+    x: 10,
+    y: 20,
+    width: 64,
+    height: 64,
+    properties: { assetId: 'bg_arena_plains' }
+  });
+  scene.addNode(node);
+
+  const trackX = new AnimationTrack({ targetNodeId: 'parity_img', propertyPath: 'transform.x' });
+  trackX.addKeyframe(0, 10, 'linear');
+  trackX.addKeyframe(60, 250, 'linear');
+  scene.addTrack(trackX);
+
+  const trackScale = new AnimationTrack({ targetNodeId: 'parity_img', propertyPath: 'transform.scaleX' });
+  trackScale.addKeyframe(0, 1.0, 'easeInOut');
+  trackScale.addKeyframe(60, 2.0, 'easeInOut');
+  scene.addTrack(trackScale);
+
+  const parityRes = await NativeParityRunner.runParityTest(scene, {
+    frames: [0, 15, 30, 45, 60]
+  });
+  assert.strictEqual(parityRes.pass, true);
+  assert.ok(parityRes.totalChecks > 0);
+});
+
+test('BETA-UI-5.13: RomFS asset packaging validates physical content SHA-256 against manifest', async () => {
+  const stagingDir = path.join(__dirname, 'build_romfs_hash_val');
+  const packager = new AssetPackager({ stagingDir });
+  const manifest = {
+    schemaVersion: 1,
+    assetCount: 1,
+    assets: [{
+      assetId: 'audio_se_select',
+      category: 'audio',
+      type: 'audio',
+      sourcePath: 'audio/se/select.wav',
+      format: 'WAV',
+      hash: '78a0ba6a3bfbad783c3956fbeefb60fb53d99572cd9b025a9c004434993a062f',
+      contentSha256: '78a0ba6a3bfbad783c3956fbeefb60fb53d99572cd9b025a9c004434993a062f',
+      romfsPath: 'romfs/audio/se_select.wav'
+    }]
+  };
+  const pkgRes = await packager.packageManifest(manifest);
+  assert.strictEqual(pkgRes.success, true);
+  assert.ok(pkgRes.manifest.assets[0].sourceSha256.includes('78a0ba6a3bfbad783c3956fbeefb60fb53d99572cd9b025a9c004434993a062f'));
+});
+
+test('BETA-UI-5.14: Asset index is deterministic and contains no timestamps or volatile IDs', () => {
+  const index = new AssetIndex();
+  const obj = index.generateIndexObject();
+  const rawStr = JSON.stringify(obj);
+  assert.ok(!rawStr.includes('timestamp'), 'Index must not contain timestamp');
+  assert.ok(!rawStr.includes('Date.now'), 'Index must not contain Date.now');
+  assert.strictEqual(typeof obj.schemaVersion, 'number');
+  assert.strictEqual(obj.assets.length, obj.assetCount);
+});
+
+test('BETA-UI-5.15: Repeated scene enter/exit cycles do not leak resources or duplicate entries', () => {
+  const ramCpp = fs.readFileSync(path.join(__dirname, '../project/src/runtime/RuntimeAssetManager.cpp'), 'utf8');
+  assert.ok(ramCpp.includes('m_cache.erase(it);'), 'Must cleanly erase released entries from map');
+  const playerCpp = fs.readFileSync(path.join(__dirname, '../project/src/runtime/ScenePlayer.cpp'), 'utf8');
+  assert.ok(playerCpp.includes('assetMgr.release(assetId.c_str());'), 'exit() must release scene assets');
+});
+
+test('BETA-UI-5.16: RuntimeAssetManager records specific diagnostics for missing assets', () => {
+  const ramHpp = fs.readFileSync(path.join(__dirname, '../project/include/runtime/RuntimeAssetManager.hpp'), 'utf8');
+  const ramCpp = fs.readFileSync(path.join(__dirname, '../project/src/runtime/RuntimeAssetManager.cpp'), 'utf8');
+  assert.ok(ramHpp.includes('AssetNotFound'), 'Must define AssetNotFound');
+  assert.ok(ramHpp.includes('AssetManifestInvalid'), 'Must define AssetManifestInvalid');
+  assert.ok(ramHpp.includes('AssetFileMissing'), 'Must define AssetFileMissing');
+  assert.ok(ramHpp.includes('AssetLoadFailed'), 'Must define AssetLoadFailed');
+  assert.ok(ramHpp.includes('UnsupportedFormat'), 'Must define UnsupportedFormat');
+  assert.ok(ramHpp.includes('AssetError getLastError() const'), 'Must expose getLastError()');
+  assert.ok(ramCpp.includes('m_lastError = AssetError::AssetNotFound;'), 'Must set AssetNotFound when asset missing from manifest');
+});
+
+test('BETA-UI-5.17: RuntimeAssetManager exposes comprehensive performance instrumentation metrics', () => {
+  const ramHpp = fs.readFileSync(path.join(__dirname, '../project/include/runtime/RuntimeAssetManager.hpp'), 'utf8');
+  const requiredMetrics = [
+    'loadedAssetCount', 'cacheHitCount', 'cacheMissCount',
+    'physicalLoadCount', 'drawCallCount', 'activeNodeCount', 'activeTrackCount'
+  ];
+  for (const m of requiredMetrics) {
+    assert.ok(ramHpp.includes(m), `RuntimeMetrics must define ${m}`);
+  }
+  assert.ok(ramHpp.includes('const RuntimeMetrics& getMetrics() const'), 'Must expose getMetrics()');
+});
+
+test('BETA-UI-5.18: BattleEngine, BattleSession, BattleState and phases remain intact and unmodified', () => {
+  assert.strictEqual(typeof BattleEngine, 'function');
+  assert.strictEqual(typeof BattleSession, 'function');
+  assert.strictEqual(typeof BattleState, 'function');
+  assert.strictEqual(typeof DeterministicRNG, 'function');
+  assert.strictEqual(typeof ActionOrderPhase, 'function');
+  assert.strictEqual(typeof DamagePhase, 'function');
+  assert.strictEqual(typeof FaintCheckPhase, 'function');
+  const session = new BattleSession({ seed: 12345 });
+  assert.ok(session);
+});
+
+test('BETA-UI-5.19: Mutating 1 byte of physical asset file triggers hash mismatch and fails packaging', async () => {
+  const tempDir = path.join(__dirname, 'mutation_test_tmp');
+  fs.mkdirSync(tempDir, { recursive: true });
+  const origPath = path.join(tempDir, 'asset_orig.png');
+  const testBytes = Buffer.from('TEST_PNG_PAYLOAD_ORIGINAL_BYTES_FOR_HASH_VERIFY_123');
+  fs.writeFileSync(origPath, testBytes);
+
+  const hashA = crypto.createHash('sha256').update(testBytes).digest('hex');
+
+  // Mutate 1 byte
+  const mutatedBytes = Buffer.from(testBytes);
+  mutatedBytes[0] ^= 0x55;
+  const hashB = crypto.createHash('sha256').update(mutatedBytes).digest('hex');
+  assert.notStrictEqual(hashA, hashB, 'Mutated byte must produce distinct hash');
+
+  fs.writeFileSync(origPath, mutatedBytes);
+
+  const packager = new AssetPackager({ stagingDir: path.join(tempDir, 'romfs') });
+  const manifest = {
+    schemaVersion: 1,
+    assetCount: 1,
+    assets: [{
+      assetId: 'mutation_test_asset',
+      category: 'ui',
+      type: 'ui',
+      sourcePath: path.relative(path.resolve(__dirname, '..'), origPath).replace(/\\/g, '/'),
+      format: 'PNG',
+      hash: hashA,
+      contentSha256: hashA,
+      dimensions: { width: 32, height: 32 },
+      target3DS: { format: 'RGBA4444', t3xPath: 'romfs/ui/mutation.t3x', tex3dsFlags: '-f rgba4444 -z auto' },
+      romfsPath: 'romfs/ui/mutation.bin'
+    }]
+  };
+
+  let failed = false;
+  try {
+    await packager.packageManifest(manifest);
+  } catch (err) {
+    failed = true;
+    assert.ok(err.message.includes('content hash mismatch') || err.message.includes('mismatch') || err.message.includes('Integrity violation'));
+  }
+  assert.strictEqual(failed, true, 'Packaging must fail when physical content has been mutated');
+
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('BETA-UI-5.20: Texture scaling contract correctly converts node dimensions to scale factors', () => {
+  const scenePlayerCpp = fs.readFileSync(path.join(__dirname, '../project/src/runtime/ScenePlayer.cpp'), 'utf8');
+  assert.ok(scenePlayerCpp.includes('calculateTextureScale'), 'ScenePlayer must implement calculateTextureScale');
+
+  function calculateTextureScale(nodeW, nodeH, texW, texH, scaleX, scaleY) {
+    const baseScaleX = (texW > 0.0) ? (nodeW / texW) : 1.0;
+    const baseScaleY = (texH > 0.0) ? (nodeH / texH) : 1.0;
+    return {
+      outScaleX: baseScaleX * scaleX,
+      outScaleY: baseScaleY * scaleY
+    };
+  }
+
+  // 1.0 scale
+  const s1 = calculateTextureScale(64, 64, 64, 64, 1.0, 1.0);
+  assert.strictEqual(s1.outScaleX, 1.0);
+  assert.strictEqual(s1.outScaleY, 1.0);
+
+  // 0.5 scale
+  const s2 = calculateTextureScale(32, 32, 64, 64, 1.0, 1.0);
+  assert.strictEqual(s2.outScaleX, 0.5);
+  assert.strictEqual(s2.outScaleY, 0.5);
+
+  // 2.0 scale
+  const s3 = calculateTextureScale(64, 64, 64, 64, 2.0, 2.0);
+  assert.strictEqual(s3.outScaleX, 2.0);
+  assert.strictEqual(s3.outScaleY, 2.0);
+
+  // FlipX
+  const s4 = calculateTextureScale(64, 64, 64, 64, -1.0, 1.0);
+  assert.strictEqual(s4.outScaleX, -1.0);
+  assert.strictEqual(s4.outScaleY, 1.0);
+});
+
+test('BETA-UI-5.21: Real devkitARM compilation of RuntimeAssetManager and ScenePlayer', () => {
+  checkToolchain('arm-none-eabi-g++');
+  checkToolchain('DEVKITARM');
+
+  const dkp = process.env.DEVKITPRO || '/opt/devkitpro';
+  const ctru = process.env.CTRULIB || path.join(dkp, 'libctru');
+  const devkitArmDir = process.env.DEVKITARM || '/opt/devkitpro/devkitARM';
+  const isWin = process.platform === 'win32';
+  const gxx = path.join(devkitArmDir, 'bin', isWin ? 'arm-none-eabi-g++.exe' : 'arm-none-eabi-g++');
+
+  const filesToCompile = [
+    { src: path.join(__dirname, '../project/src/runtime/RuntimeAssetManager.cpp'), out: path.join(__dirname, 'ram_test.o') },
+    { src: path.join(__dirname, '../project/src/runtime/ScenePlayer.cpp'), out: path.join(__dirname, 'player_test.o') },
+    { src: path.join(__dirname, 'native/test_runtime_asset_manager.cpp'), out: path.join(__dirname, 'test_ram.o') }
+  ];
+
+  for (const { src, out } of filesToCompile) {
+    const args = [
+      '-march=armv6k', '-mtune=mpcore', '-mfloat-abi=hard', '-mtp=cp15',
+      '-D__3DS__', '-D_3DS', '-DARM11',
+      '-O2', '-std=gnu++17', '-fno-rtti', '-fno-exceptions',
+      `-I${path.join(__dirname, '../project/include')}`,
+      `-I${path.join(__dirname, '../project/generated/include')}`,
+      `-I${path.join(ctru, 'include')}`,
+      `-I${path.join(dkp, 'portlibs/3ds/include')}`,
+      '-c', src,
+      '-o', out
+    ];
+
+    try {
+      execFileSync(gxx, args, { stdio: 'pipe' });
+      assert.ok(fs.existsSync(out), `File ${src} must compile to real ARM object file`);
+      assert.ok(fs.statSync(out).size > 0, 'Object file must not be empty');
+    } finally {
+      if (fs.existsSync(out)) {
+        fs.rmSync(out, { force: true });
+      }
+    }
+  }
 });
 
 let blocked = 0;

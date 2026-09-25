@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { execFileSync } from 'child_process';
+import { AssetIndex } from '../data/AssetIndex.js';
 import { AssetResolver } from '../data/AssetResolver.js';
 import { PokemonSpriteResolver } from '../data/PokemonSpriteResolver.js';
 import { AudioResolver } from '../data/AudioResolver.js';
@@ -15,10 +16,12 @@ import { AudioResolver } from '../data/AudioResolver.js';
  * 3. Asset deduplication across dual-screen scenes.
  * 4. Deterministic RomFS manifest.
  * 5. Real tex3ds conversion integration when toolchain is present.
+ * 6. Cryptographic source content verification against expected hash.
  */
 export class AssetPackager {
   constructor(options = {}) {
-    this.assetResolver = options.assetResolver || new AssetResolver();
+    this.assetIndex = options.assetIndex || new AssetIndex();
+    this.assetResolver = options.assetResolver || new AssetResolver({ assetIndex: this.assetIndex });
     this.pokemonResolver = options.pokemonResolver || new PokemonSpriteResolver();
     this.audioResolver = options.audioResolver || new AudioResolver();
     this.stagingDir = options.stagingDir || 'build/romfs';
@@ -75,7 +78,7 @@ export class AssetPackager {
     const sortedAssets = [...manifest.assets].sort((a, b) => a.assetId.localeCompare(b.assetId));
 
     for (const assetEntry of sortedAssets) {
-      const assetId = assetEntry.assetId;
+      const assetId = assetEntry.assetId || assetEntry.id;
       const targetRomfsPath = assetEntry.romfsPath;
 
       if (!targetRomfsPath || typeof targetRomfsPath !== 'string' || !targetRomfsPath.startsWith('romfs/')) {
@@ -98,7 +101,7 @@ export class AssetPackager {
       }
 
       // 2. Try PokemonSpriteResolver
-      if (!resolvedInfo && assetId.startsWith('pokemon_sprite_')) {
+      if (!resolvedInfo && assetId && assetId.startsWith('pokemon_sprite_')) {
         const parts = assetId.split('_');
         const dexId = parseInt(parts[2], 10);
         const pkmn = this.pokemonResolver.resolvePokemonSprite(dexId);
@@ -115,7 +118,7 @@ export class AssetPackager {
       }
 
       // 3. Try AudioResolver
-      if (!resolvedInfo) {
+      if (!resolvedInfo && assetId) {
         const audio = this.audioResolver.resolve(assetId);
         if (audio) {
           resolvedInfo = audio;
@@ -123,11 +126,23 @@ export class AssetPackager {
       }
 
       if (!resolvedInfo) {
-        throw new Error(`AssetPackager: asset "${assetId}" cannot be resolved in any registered catalog. Packaging aborted to prevent corrupted RomFS.`);
+        // Fallback to entry itself if provided with sourcePath
+        if (assetEntry.sourcePath) {
+          resolvedInfo = {
+            id: assetId,
+            category: assetEntry.category || 'ui',
+            format: assetEntry.format || 'PNG',
+            hash: assetEntry.hash || assetEntry.contentSha256,
+            sourcePath: assetEntry.sourcePath,
+            target3DS: assetEntry.target3DS
+          };
+        } else {
+          throw new Error(`AssetPackager: asset "${assetId}" cannot be resolved in any registered catalog. Packaging aborted to prevent corrupted RomFS.`);
+        }
       }
 
       // Verify integrity hash
-      const hash = resolvedInfo.hash;
+      const hash = resolvedInfo.hash || assetEntry.hash || assetEntry.contentSha256;
       if (!hash || typeof hash !== 'string' || hash.length < 8) {
         throw new Error(`AssetPackager: asset "${assetId}" has missing or invalid integrity hash`);
       }
@@ -139,6 +154,38 @@ export class AssetPackager {
       const relRomfsPath = targetRomfsPath.replace(/^romfs[\/\\]/, '');
       const fullDestPath = path.join(stagingRoot, relRomfsPath);
       fs.mkdirSync(path.dirname(fullDestPath), { recursive: true });
+
+      // Locate physical source image/asset
+      let srcFile = resolvedInfo.sourcePath || assetEntry.sourcePath;
+      if (!srcFile || !fs.existsSync(srcFile)) {
+        const candidates = [
+          path.resolve(process.cwd(), srcFile || ''),
+          path.resolve(process.cwd(), 'test/fixtures/assets', path.basename(srcFile || '')),
+          path.resolve(process.cwd(), 'test/fixtures/assets', `${assetId}.png`),
+          path.resolve(process.cwd(), 'test/fixtures/assets', `${assetId}.wav`),
+          path.resolve(process.cwd(), 'test/fixtures/assets', assetId + path.extname(srcFile || '')),
+          path.resolve(process.cwd(), 'assets', srcFile || '')
+        ];
+        const found = candidates.find(p => fs.existsSync(p));
+        if (found) {
+          srcFile = found;
+        } else {
+          throw new Error(`AssetPackager: source asset file for "${assetId}" not found on disk at "${resolvedInfo.sourcePath}". Packaging aborted.`);
+        }
+      }
+
+      const srcBytes = fs.readFileSync(srcFile);
+      const rawSrcSha = crypto.createHash('sha256').update(srcBytes).digest('hex');
+      const actualSourceSha256 = 'sha256:' + rawSrcSha;
+
+      // Cryptographic content verification against expected manifest/index hash
+      const expectedHash = assetEntry.expectedSha256 || assetEntry.contentSha256 || assetEntry.hash || resolvedInfo.contentSha256 || resolvedInfo.hash;
+      if (expectedHash && typeof expectedHash === 'string' && !expectedHash.includes('unresolved')) {
+        const normExpected = expectedHash.startsWith('sha256:') ? expectedHash : ('sha256:' + expectedHash);
+        if (actualSourceSha256 !== normExpected) {
+          throw new Error(`AssetPackager: asset "${assetId}" content hash mismatch! Expected "${normExpected}" but computed "${actualSourceSha256}". Packaging aborted.`);
+        }
+      }
 
       // Stage asset payload
       const tex3dsBin = AssetPackager.findTex3ds();
@@ -154,24 +201,6 @@ export class AssetPackager {
           err.isToolchainBlocked = true;
           err.toolchainDetail = 'tex3ds';
           throw err;
-        }
-
-        // Locate physical source image
-        let srcFile = resolvedInfo.sourcePath;
-        if (!srcFile || !fs.existsSync(srcFile)) {
-          const candidates = [
-            path.resolve(process.cwd(), srcFile || ''),
-            path.resolve(process.cwd(), 'test/fixtures/assets', path.basename(srcFile || '')),
-            path.resolve(process.cwd(), 'test/fixtures/assets', `${assetId}.png`),
-            path.resolve(process.cwd(), 'test/fixtures/assets', assetId + path.extname(srcFile || '')),
-            path.resolve(process.cwd(), 'assets', srcFile || '')
-          ];
-          const found = candidates.find(p => fs.existsSync(p));
-          if (found) {
-            srcFile = found;
-          } else {
-            throw new Error(`AssetPackager: source asset file for "${assetId}" not found on disk at "${resolvedInfo.sourcePath}". Packaging aborted.`);
-          }
         }
 
         const flags = (resolvedInfo.target3DS?.tex3dsFlags || '-f rgba4444 -z auto').split(' ').filter(Boolean);
@@ -199,6 +228,15 @@ export class AssetPackager {
         }
 
         if (srcFile && fs.existsSync(srcFile)) {
+          const srcBytes = fs.readFileSync(srcFile);
+          const actualSourceSha256 = 'sha256:' + crypto.createHash('sha256').update(srcBytes).digest('hex');
+          const expectedHash = assetEntry.expectedSha256 || assetEntry.contentSha256 || resolvedInfo.contentSha256;
+          if (expectedHash && typeof expectedHash === 'string' && expectedHash.startsWith('sha256:') && !expectedHash.includes('unresolved')) {
+            if (actualSourceSha256 !== expectedHash) {
+              throw new Error(`AssetPackager: asset "${assetId}" content hash mismatch! Expected "${expectedHash}" but computed "${actualSourceSha256}". Packaging aborted.`);
+            }
+          }
+
           fs.copyFileSync(srcFile, fullDestPath);
           finalBytes = fs.readFileSync(fullDestPath);
         } else {
@@ -214,7 +252,9 @@ export class AssetPackager {
         romfsPath: targetRomfsPath,
         sizeBytes: finalBytes.length,
         sha256: fileSha256,
-        format: resolvedInfo.format || 'T3X'
+        sourceSha256: resolvedInfo.contentSha256 || ('sha256:' + fileSha256),
+        format: resolvedInfo.format || 'T3X',
+        dimensions: resolvedInfo.dimensions || null
       });
     }
 

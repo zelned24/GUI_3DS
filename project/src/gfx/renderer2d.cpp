@@ -1,5 +1,6 @@
 #include "gfx/renderer2d.hpp"
 #include "screens/SceneAssets.hpp"
+#include "runtime/RuntimeAssetManager.hpp"
 #include <cmath>
 
 #if defined(__arm__) || defined(__3DS__) || defined(_3DS)
@@ -20,6 +21,7 @@ Renderer2D::Renderer2D()
     : m_topTarget(nullptr)
     , m_bottomTarget(nullptr)
     , m_currentTarget(nullptr)
+    , m_textBuf(nullptr)
     , m_initialized(false)
     , m_frameActive(false)
 {
@@ -51,6 +53,12 @@ bool Renderer2D::init(size_t maxObjects) {
         return false;
     }
 
+    // 3. Pre-allocate static text buffer to eliminate dynamic allocation per frame (Requirement 36)
+    m_textBuf = C2D_TextBufNew(1024);
+
+    // 4. Initialize global RuntimeAssetManager
+    Citro2D::getRuntimeAssetManager().init();
+
     m_initialized = true;
     return true;
 }
@@ -61,6 +69,13 @@ void Renderer2D::fini() {
     if (m_frameActive) {
         endFrame();
     }
+
+    if (m_textBuf) {
+        C2D_TextBufDelete(m_textBuf);
+        m_textBuf = nullptr;
+    }
+
+    Citro2D::getRuntimeAssetManager().fini();
 
     C2D_Fini();
     C3D_Fini();
@@ -166,16 +181,21 @@ void Renderer2D::drawImage(
 ) {
     if (!assetId || !m_currentTarget || opacity <= 0.001f) return;
 
-    // Resolve asset entry from SceneAssets and AssetManifest
-    const Citro2D::AssetEntry* entry = Citro2D::findSceneAsset(assetId);
-    if (!entry || !entry->romfsPath) return;
+    Citro2D::RuntimeAssetManager& assetMgr = Citro2D::getRuntimeAssetManager();
+    assetMgr.recordDrawCall();
 
-    // Load sprite sheet / texture from RomFS using official Citro2D API
-    C2D_SpriteSheet sheet = C2D_SpriteSheetLoad(entry->romfsPath);
-    if (sheet) {
-        C2D_Image img = C2D_SpriteSheetGetImage(sheet, 0);
-        drawImageDirect(img, x, y, width, height, rotation, opacity, flipX, flipY, tintColor);
-        C2D_SpriteSheetFree(sheet);
+    const Citro2D::CachedAsset* cached = assetMgr.get(assetId);
+    if (cached && cached->loaded) {
+        drawImageDirect(cached->image, x, y, width, height, rotation, opacity, flipX, flipY, tintColor);
+        return;
+    }
+
+    // Load once into cache rather than alloc/free per draw frame (Requirement 11)
+    if (assetMgr.preload(assetId)) {
+        const Citro2D::CachedAsset* newlyCached = assetMgr.get(assetId);
+        if (newlyCached && newlyCached->loaded) {
+            drawImageDirect(newlyCached->image, x, y, width, height, rotation, opacity, flipX, flipY, tintColor);
+        }
     }
 }
 
@@ -191,12 +211,10 @@ void Renderer2D::drawText(
     a = static_cast<uint32_t>(a * opacity);
     uint32_t finalColor = (color & 0x00FFFFFF) | (a << 24);
 
-    C2D_TextBuf buf = C2D_TextBufNew(512);
-    if (buf) {
+    if (m_textBuf) {
         C2D_Text c2dText;
-        C2D_TextParse(&c2dText, buf, text);
+        C2D_TextParse(&c2dText, m_textBuf, text);
         C2D_TextOptimize(&c2dText);
         C2D_DrawText(&c2dText, C2D_WithColor, x, y, 0.5f, 1.0f, 1.0f, finalColor);
-        C2D_TextBufDelete(buf);
     }
 }

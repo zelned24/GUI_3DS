@@ -75,6 +75,7 @@ private:
     C3D_RenderTarget* m_topTarget;
     C3D_RenderTarget* m_bottomTarget;
     C3D_RenderTarget* m_currentTarget;
+    C2D_TextBuf m_textBuf;
     bool m_initialized;
     bool m_frameActive;
 };

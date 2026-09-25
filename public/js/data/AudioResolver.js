@@ -34,7 +34,8 @@ export class AudioResolver {
         format: 'BCSTM',
         sourcePath: 'audio/se/select.wav',
         romfsPath: 'romfs/audio/se_select.bcstm',
-        hash: 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+        // Real physical SHA-256 of test/fixtures/assets/select.wav (8864 bytes)
+        hash: 'sha256:78a0ba6a3bfbad783c3956fbeefb60fb53d99572cd9b025a9c004434993a062f'
       },
       {
         id: 'audio_se_hit_normal',

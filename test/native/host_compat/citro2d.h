@@ -7,15 +7,21 @@
 #define C3D_FRAME_SYNCDRAW 1
 
 typedef struct {
-    void* tex;
-    const struct {
-        u16 width;
-        u16 height;
-        u16 left;
-        u16 top;
-        u16 right;
-        u16 bottom;
-    }* subtex;
+    void* data;
+} C3D_Tex;
+
+typedef struct {
+    u16 width;
+    u16 height;
+    u16 left;
+    u16 top;
+    u16 right;
+    u16 bottom;
+} Tex3DS_SubTexture;
+
+typedef struct {
+    C3D_Tex* tex;
+    const Tex3DS_SubTexture* subtex;
 } C2D_Image;
 
 typedef struct {

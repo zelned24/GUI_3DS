@@ -100,19 +100,22 @@ export class AssetBrowser {
     gridEl.innerHTML = assets.map(asset => {
       const nodeData = assetResolver.createNodeData(asset.id);
       const isPokemon = asset.category === 'pokemon';
-      const icon = isPokemon ? '⚡' : (asset.category === 'backgrounds' ? '🌄' : (asset.category === 'ui' ? '🔲' : '🧪'));
+      const icon = isPokemon ? '⚡' : (asset.category === 'backgrounds' ? '🌄' : (asset.category === 'ui' ? '🔲' : (asset.category === 'audio' ? '🎵' : '🧪')));
+      const status = asset.status || 'AVAILABLE';
+      const statusClass = status === 'AVAILABLE' ? 'status-avail' : (status === 'MISSING' ? 'status-missing' : 'status-invalid');
 
       return `
-        <div class="asset-card" draggable="true" data-asset-id="${asset.id}">
+        <div class="asset-card ${statusClass}" draggable="true" data-asset-id="${asset.id}" data-status="${status}">
           <div class="asset-thumb">
             <span class="thumb-icon">${icon}</span>
-            <span class="asset-dims">${asset.dimensions.width}×${asset.dimensions.height}</span>
+            <span class="asset-dims">${asset.dimensions?.width || 0}×${asset.dimensions?.height || 0}</span>
+            <span class="asset-status-badge ${statusClass}">${status}</span>
           </div>
           <div class="asset-info">
             <div class="asset-name" title="${asset.name}">${asset.name}</div>
             <div class="asset-meta">
-              <span class="asset-type-badge">${asset.defaultComponent}</span>
-              <span class="asset-3ds-badge">${asset.target3DS.format}</span>
+              <span class="asset-type-badge">${asset.defaultComponent || 'Image'}</span>
+              <span class="asset-3ds-badge">${asset.target3DS?.format || 'RGBA4444'}</span>
             </div>
           </div>
           <button class="asset-add-btn" title="Add to Active Screen">+</button>

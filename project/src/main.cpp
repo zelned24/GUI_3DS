@@ -2,6 +2,8 @@
 #include "screens/SceneAssets.hpp"
 #include "screens/AssetManifest.hpp"
 #include "gfx/renderer2d.hpp"
+#include "runtime/RuntimeAssetManager.hpp"
+#include "runtime/ScenePlayer.hpp"
 #include "core/input_manager.hpp"
 
 int main() {
@@ -10,7 +12,7 @@ int main() {
 
     InputManager input;
 
-    // Instantiate generated 3DS Screen
+    // 1. Generated 3DS Screen
     PikachuEntranceScene scene;
     scene.enter();
     scene.handleInput(input);
@@ -18,6 +20,17 @@ int main() {
     scene.drawTop(renderer);
     scene.drawBottom(renderer);
     scene.exit();
+
+    // 2. Production ScenePlayer playback controller
+    Citro2D::ScenePlayer player(Citro2D::g_SceneDefinition);
+    player.enter();
+    player.play();
+    player.update(1.0f / 60.0f);
+    player.renderTop(renderer);
+    player.renderBottom(renderer);
+    player.pause();
+    player.seek(15);
+    player.exit();
 
     renderer.fini();
     return 0;

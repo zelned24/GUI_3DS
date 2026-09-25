@@ -1,0 +1,776 @@
+{
+  "schemaVersion": 2,
+  "sourceRepository": "https://github.com/pagefaultgames/pokerogue-assets",
+  "sourceRevision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+  "assetCount": 33,
+  "assets": [
+    {
+      "id": "audio_bgm_battle_wild",
+      "name": "Wild Battle BGM",
+      "category": "audio",
+      "type": "audio",
+      "defaultComponent": "Audio",
+      "sourcePath": "audio/bgm/battle_wild.ogg",
+      "contentSha256": null,
+      "format": "WAV",
+      "dimensions": {
+        "width": 0,
+        "height": 0
+      },
+      "target3DS": {
+        "format": "BCSTM",
+        "t3xPath": "romfs/audio/bgm_battle_wild.bcstm",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/audio/bgm_battle_wild.bcstm",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "audio_bgm_victory",
+      "name": "Victory Fanfare BGM",
+      "category": "audio",
+      "type": "audio",
+      "defaultComponent": "Audio",
+      "sourcePath": "audio/bgm/victory.ogg",
+      "contentSha256": null,
+      "format": "WAV",
+      "dimensions": {
+        "width": 0,
+        "height": 0
+      },
+      "target3DS": {
+        "format": "BCSTM",
+        "t3xPath": "romfs/audio/bgm_victory.bcstm",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/audio/bgm_victory.bcstm",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "audio_se_hit_normal",
+      "name": "Normal Hit Sound",
+      "category": "audio",
+      "type": "audio",
+      "defaultComponent": "Audio",
+      "sourcePath": "audio/se/hit_normal.wav",
+      "contentSha256": null,
+      "format": "WAV",
+      "dimensions": {
+        "width": 0,
+        "height": 0
+      },
+      "target3DS": {
+        "format": "BCSTM",
+        "t3xPath": "romfs/audio/se_hit_normal.bcstm",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/audio/se_hit_normal.bcstm",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "audio_se_select",
+      "name": "UI Select Sound",
+      "category": "audio",
+      "type": "audio",
+      "defaultComponent": "Audio",
+      "sourcePath": "audio/se/select.wav",
+      "contentSha256": "sha256:78a0ba6a3bfbad783c3956fbeefb60fb53d99572cd9b025a9c004434993a062f",
+      "format": "WAV",
+      "dimensions": {
+        "width": 0,
+        "height": 0
+      },
+      "target3DS": {
+        "format": "BCSTM",
+        "t3xPath": "romfs/audio/se_select.bcstm",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/audio/se_select.bcstm",
+      "status": "AVAILABLE",
+      "size": 8864
+    },
+    {
+      "id": "bg_arena_cave",
+      "name": "Cave Arena",
+      "category": "backgrounds",
+      "type": "texture",
+      "defaultComponent": "Image",
+      "sourcePath": "images/arenas/cave.png",
+      "contentSha256": null,
+      "format": "PNG",
+      "dimensions": {
+        "width": 400,
+        "height": 240
+      },
+      "target3DS": {
+        "format": "RGB565",
+        "t3xPath": "romfs/arenas/cave.t3x",
+        "tex3dsFlags": "-f rgb565 -z auto"
+      },
+      "romfsPath": "romfs/arenas/cave.t3x",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "bg_arena_forest",
+      "name": "Forest Arena",
+      "category": "backgrounds",
+      "type": "texture",
+      "defaultComponent": "Image",
+      "sourcePath": "images/arenas/forest.png",
+      "contentSha256": "sha256:836425182e211cf9c250147bc178b4c8ac7326b81b10ab1aabf4895cc724e59b",
+      "format": "PNG",
+      "dimensions": {
+        "width": 400,
+        "height": 240
+      },
+      "target3DS": {
+        "format": "RGB565",
+        "t3xPath": "romfs/arenas/forest.t3x",
+        "tex3dsFlags": "-f rgb565 -z auto"
+      },
+      "romfsPath": "romfs/arenas/forest.t3x",
+      "status": "AVAILABLE",
+      "size": 103
+    },
+    {
+      "id": "bg_arena_gym",
+      "name": "Gym Arena",
+      "category": "backgrounds",
+      "type": "texture",
+      "defaultComponent": "Image",
+      "sourcePath": "images/arenas/gym.png",
+      "contentSha256": null,
+      "format": "PNG",
+      "dimensions": {
+        "width": 400,
+        "height": 240
+      },
+      "target3DS": {
+        "format": "RGB565",
+        "t3xPath": "romfs/arenas/gym.t3x",
+        "tex3dsFlags": "-f rgb565 -z auto"
+      },
+      "romfsPath": "romfs/arenas/gym.t3x",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "bg_arena_plains",
+      "name": "Plains Arena",
+      "category": "backgrounds",
+      "type": "texture",
+      "defaultComponent": "Image",
+      "sourcePath": "images/arenas/plains.png",
+      "contentSha256": "sha256:d618800d7b6edecff5d97324920288db0c4aec50b7396637c64c71aab118effe",
+      "format": "PNG",
+      "dimensions": {
+        "width": 400,
+        "height": 240
+      },
+      "target3DS": {
+        "format": "RGB565",
+        "t3xPath": "romfs/arenas/plains.t3x",
+        "tex3dsFlags": "-f rgb565 -z auto"
+      },
+      "romfsPath": "romfs/arenas/plains.t3x",
+      "status": "AVAILABLE",
+      "size": 103
+    },
+    {
+      "id": "bg_arena_sea",
+      "name": "Sea Arena",
+      "category": "backgrounds",
+      "type": "texture",
+      "defaultComponent": "Image",
+      "sourcePath": "images/arenas/sea.png",
+      "contentSha256": "sha256:bce3031fea8d58684af6b3276e45bcda2f50d89528d258dddf755c9f76df7e38",
+      "format": "PNG",
+      "dimensions": {
+        "width": 400,
+        "height": 240
+      },
+      "target3DS": {
+        "format": "RGB565",
+        "t3xPath": "romfs/arenas/sea.t3x",
+        "tex3dsFlags": "-f rgb565 -z auto"
+      },
+      "romfsPath": "romfs/arenas/sea.t3x",
+      "status": "AVAILABLE",
+      "size": 104
+    },
+    {
+      "id": "bg_arena_space",
+      "name": "Space Arena",
+      "category": "backgrounds",
+      "type": "texture",
+      "defaultComponent": "Image",
+      "sourcePath": "images/arenas/space.png",
+      "contentSha256": null,
+      "format": "PNG",
+      "dimensions": {
+        "width": 400,
+        "height": 240
+      },
+      "target3DS": {
+        "format": "RGB565",
+        "t3xPath": "romfs/arenas/space.t3x",
+        "tex3dsFlags": "-f rgb565 -z auto"
+      },
+      "romfsPath": "romfs/arenas/space.t3x",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "fx_impact_hit",
+      "name": "Impact Hit Effect",
+      "category": "effects",
+      "type": "effect",
+      "defaultComponent": "Image",
+      "sourcePath": "images/effects/hit.png",
+      "contentSha256": null,
+      "format": "PNG",
+      "dimensions": {
+        "width": 48,
+        "height": 48
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/effects/fx_impact_hit.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/effects/fx_impact_hit.t3x",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "fx_slash",
+      "name": "Slash Effect",
+      "category": "effects",
+      "type": "effect",
+      "defaultComponent": "Image",
+      "sourcePath": "images/effects/slash.png",
+      "contentSha256": null,
+      "format": "PNG",
+      "dimensions": {
+        "width": 64,
+        "height": 64
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/effects/fx_slash.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/effects/fx_slash.t3x",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "fx_thunder",
+      "name": "Thunder Strike Effect",
+      "category": "effects",
+      "type": "effect",
+      "defaultComponent": "Image",
+      "sourcePath": "images/effects/thunder.png",
+      "contentSha256": null,
+      "format": "PNG",
+      "dimensions": {
+        "width": 64,
+        "height": 96
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/effects/fx_thunder.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/effects/fx_thunder.t3x",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "item_pokeball",
+      "name": "Poké Ball",
+      "category": "items",
+      "type": "item",
+      "defaultComponent": "Image",
+      "sourcePath": "images/items/pokeball.png",
+      "contentSha256": null,
+      "format": "PNG",
+      "dimensions": {
+        "width": 24,
+        "height": 24
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/items/item_pokeball.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/items/item_pokeball.t3x",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "item_potion",
+      "name": "Potion",
+      "category": "items",
+      "type": "item",
+      "defaultComponent": "Image",
+      "sourcePath": "images/items/potion.png",
+      "contentSha256": null,
+      "format": "PNG",
+      "dimensions": {
+        "width": 24,
+        "height": 24
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/items/item_potion.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/items/item_potion.t3x",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "item_rare_candy",
+      "name": "Rare Candy",
+      "category": "items",
+      "type": "item",
+      "defaultComponent": "Image",
+      "sourcePath": "images/items/rare_candy.png",
+      "contentSha256": null,
+      "format": "PNG",
+      "dimensions": {
+        "width": 24,
+        "height": 24
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/items/item_rare_candy.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/items/item_rare_candy.t3x",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "item_super_potion",
+      "name": "Super Potion",
+      "category": "items",
+      "type": "item",
+      "defaultComponent": "Image",
+      "sourcePath": "images/items/super_potion.png",
+      "contentSha256": null,
+      "format": "PNG",
+      "dimensions": {
+        "width": 24,
+        "height": 24
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/items/item_super_potion.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/items/item_super_potion.t3x",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "item_ultra_ball",
+      "name": "Ultra Ball",
+      "category": "items",
+      "type": "item",
+      "defaultComponent": "Image",
+      "sourcePath": "images/items/ultra_ball.png",
+      "contentSha256": null,
+      "format": "PNG",
+      "dimensions": {
+        "width": 24,
+        "height": 24
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/items/item_ultra_ball.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/items/item_ultra_ball.t3x",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "pkmn_001",
+      "name": "Bulbasaur",
+      "category": "pokemon",
+      "type": "sprite",
+      "defaultComponent": "PokemonSprite",
+      "sourcePath": "images/pokemon/1.png",
+      "contentSha256": null,
+      "format": "TexturePacker PNG + JSON",
+      "dimensions": {
+        "width": 64,
+        "height": 64
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/sprites/pokemon/1.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/sprites/pokemon/1.t3x",
+      "status": "MISSING",
+      "size": 0,
+      "nationalDexId": 1,
+      "species": "Bulbasaur",
+      "facing": "front",
+      "form": "normal",
+      "gender": "default",
+      "shiny": false
+    },
+    {
+      "id": "pkmn_006",
+      "name": "Charizard",
+      "category": "pokemon",
+      "type": "sprite",
+      "defaultComponent": "PokemonSprite",
+      "sourcePath": "images/pokemon/6.png",
+      "contentSha256": null,
+      "format": "TexturePacker PNG + JSON",
+      "dimensions": {
+        "width": 96,
+        "height": 96
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/sprites/pokemon/6.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/sprites/pokemon/6.t3x",
+      "status": "MISSING",
+      "size": 0,
+      "nationalDexId": 6,
+      "species": "Charizard",
+      "facing": "front",
+      "form": "normal",
+      "gender": "default",
+      "shiny": false
+    },
+    {
+      "id": "pkmn_025",
+      "name": "Pikachu",
+      "category": "pokemon",
+      "type": "sprite",
+      "defaultComponent": "PokemonSprite",
+      "sourcePath": "images/pokemon/25.png",
+      "contentSha256": "sha256:91e5f6d2f0279062761689b3ff0a2f91e2042377d6c712e8dbc7761b5b2b69ba",
+      "format": "TexturePacker PNG + JSON",
+      "dimensions": {
+        "width": 32,
+        "height": 32
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/sprites/pokemon/25.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/sprites/pokemon/25.t3x",
+      "status": "AVAILABLE",
+      "size": 102,
+      "nationalDexId": 25,
+      "species": "Pikachu",
+      "facing": "front",
+      "form": "normal",
+      "gender": "default",
+      "shiny": false
+    },
+    {
+      "id": "pkmn_076",
+      "name": "Golem",
+      "category": "pokemon",
+      "type": "sprite",
+      "defaultComponent": "PokemonSprite",
+      "sourcePath": "images/pokemon/76.png",
+      "contentSha256": null,
+      "format": "TexturePacker PNG + JSON",
+      "dimensions": {
+        "width": 80,
+        "height": 80
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/sprites/pokemon/76.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/sprites/pokemon/76.t3x",
+      "status": "MISSING",
+      "size": 0,
+      "nationalDexId": 76,
+      "species": "Golem",
+      "facing": "front",
+      "form": "normal",
+      "gender": "default",
+      "shiny": false
+    },
+    {
+      "id": "pkmn_094",
+      "name": "Gengar",
+      "category": "pokemon",
+      "type": "sprite",
+      "defaultComponent": "PokemonSprite",
+      "sourcePath": "images/pokemon/94.png",
+      "contentSha256": null,
+      "format": "TexturePacker PNG + JSON",
+      "dimensions": {
+        "width": 72,
+        "height": 72
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/sprites/pokemon/94.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/sprites/pokemon/94.t3x",
+      "status": "MISSING",
+      "size": 0,
+      "nationalDexId": 94,
+      "species": "Gengar",
+      "facing": "front",
+      "form": "normal",
+      "gender": "default",
+      "shiny": false
+    },
+    {
+      "id": "pkmn_448",
+      "name": "Lucario",
+      "category": "pokemon",
+      "type": "sprite",
+      "defaultComponent": "PokemonSprite",
+      "sourcePath": "images/pokemon/448.png",
+      "contentSha256": null,
+      "format": "TexturePacker PNG + JSON",
+      "dimensions": {
+        "width": 72,
+        "height": 72
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/sprites/pokemon/448.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/sprites/pokemon/448.t3x",
+      "status": "MISSING",
+      "size": 0,
+      "nationalDexId": 448,
+      "species": "Lucario",
+      "facing": "front",
+      "form": "normal",
+      "gender": "default",
+      "shiny": false
+    },
+    {
+      "id": "pokemon_sprite_25_front",
+      "name": "Pikachu",
+      "category": "pokemon",
+      "type": "sprite",
+      "defaultComponent": "PokemonSprite",
+      "sourcePath": "images/pokemon/25.png",
+      "contentSha256": "sha256:91e5f6d2f0279062761689b3ff0a2f91e2042377d6c712e8dbc7761b5b2b69ba",
+      "format": "TexturePacker PNG + JSON",
+      "dimensions": {
+        "width": 32,
+        "height": 32
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/sprites/pokemon/25.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/sprites/pokemon/25.t3x",
+      "status": "AVAILABLE",
+      "size": 102,
+      "nationalDexId": 25,
+      "species": "Pikachu",
+      "facing": "front",
+      "form": "normal",
+      "gender": "default",
+      "shiny": false
+    },
+    {
+      "id": "ui_command_panel",
+      "name": "Battle Command Panel",
+      "category": "ui",
+      "type": "ui",
+      "defaultComponent": "Image",
+      "sourcePath": "images/ui/command_panel.png",
+      "contentSha256": "sha256:d7bed892e1f8a8d403096c95eba8f94d03f2ee38351926eec06b242eba37666c",
+      "format": "PNG",
+      "dimensions": {
+        "width": 320,
+        "height": 120
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/ui/ui_command_panel.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/ui/ui_command_panel.t3x",
+      "status": "AVAILABLE",
+      "size": 103
+    },
+    {
+      "id": "ui_cursor_arrow",
+      "name": "Selection Cursor",
+      "category": "ui",
+      "type": "ui",
+      "defaultComponent": "Image",
+      "sourcePath": "images/ui/cursor.png",
+      "contentSha256": null,
+      "format": "PNG",
+      "dimensions": {
+        "width": 16,
+        "height": 16
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/ui/ui_cursor_arrow.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/ui/ui_cursor_arrow.t3x",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "ui_dialog_box",
+      "name": "Dialogue Box",
+      "category": "ui",
+      "type": "ui",
+      "defaultComponent": "Image",
+      "sourcePath": "images/ui/dialog_box.png",
+      "contentSha256": "sha256:1a71a2101c8ab324f420cef5999c55a47a322358222125a5f7ebf9a1ed44d4a7",
+      "format": "PNG",
+      "dimensions": {
+        "width": 320,
+        "height": 64
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/ui/ui_dialog_box.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/ui/ui_dialog_box.t3x",
+      "status": "AVAILABLE",
+      "size": 102
+    },
+    {
+      "id": "ui_hp_box_enemy",
+      "name": "HP Box (Enemy)",
+      "category": "ui",
+      "type": "ui",
+      "defaultComponent": "Image",
+      "sourcePath": "images/ui/hp_box_enemy.png",
+      "contentSha256": null,
+      "format": "PNG",
+      "dimensions": {
+        "width": 140,
+        "height": 36
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/ui/ui_hp_box_enemy.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/ui/ui_hp_box_enemy.t3x",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "ui_hp_box_player",
+      "name": "HP Box (Player)",
+      "category": "ui",
+      "type": "ui",
+      "defaultComponent": "Image",
+      "sourcePath": "images/ui/hp_box_player.png",
+      "contentSha256": null,
+      "format": "PNG",
+      "dimensions": {
+        "width": 160,
+        "height": 42
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/ui/ui_hp_box_player.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/ui/ui_hp_box_player.t3x",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "ui_pokeball_icon",
+      "name": "Pokéball Icon",
+      "category": "ui",
+      "type": "ui",
+      "defaultComponent": "Image",
+      "sourcePath": "images/ui/pokeball_icon.png",
+      "contentSha256": null,
+      "format": "PNG",
+      "dimensions": {
+        "width": 16,
+        "height": 16
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/ui/ui_pokeball_icon.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/ui/ui_pokeball_icon.t3x",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "ui_type_electric",
+      "name": "Electric Type Badge",
+      "category": "ui",
+      "type": "ui",
+      "defaultComponent": "Image",
+      "sourcePath": "images/types/electric.png",
+      "contentSha256": null,
+      "format": "PNG",
+      "dimensions": {
+        "width": 32,
+        "height": 14
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/ui/ui_type_electric.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/ui/ui_type_electric.t3x",
+      "status": "MISSING",
+      "size": 0
+    },
+    {
+      "id": "ui_type_rock",
+      "name": "Rock Type Badge",
+      "category": "ui",
+      "type": "ui",
+      "defaultComponent": "Image",
+      "sourcePath": "images/types/rock.png",
+      "contentSha256": null,
+      "format": "PNG",
+      "dimensions": {
+        "width": 32,
+        "height": 14
+      },
+      "target3DS": {
+        "format": "RGBA4444",
+        "t3xPath": "romfs/ui/ui_type_rock.t3x",
+        "tex3dsFlags": "-f rgba4444 -z auto"
+      },
+      "romfsPath": "romfs/ui/ui_type_rock.t3x",
+      "status": "MISSING",
+      "size": 0
+    }
+  ]
+}

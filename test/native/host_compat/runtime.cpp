@@ -69,8 +69,20 @@ void C2D_DrawText(const C2D_Text* text, u32 flags, float x, float y, float z, fl
     (void)text; (void)flags; (void)x; (void)y; (void)z; (void)scaleX; (void)scaleY;
 }
 
-C2D_SpriteSheet C2D_SpriteSheetLoad(const char* filename) { (void)filename; return nullptr; }
-C2D_Image C2D_SpriteSheetGetImage(C2D_SpriteSheet sheet, size_t index) { (void)sheet; (void)index; C2D_Image img = { nullptr, nullptr }; return img; }
+static int s_dummySheet = 42;
+static C3D_Tex s_dummyTex = {};
+static Tex3DS_SubTexture s_dummySub = { 64, 64, 0, 0, 64, 64 };
+
+C2D_SpriteSheet C2D_SpriteSheetLoad(const char* filename) {
+    if (!filename || filename[0] == '\0') return nullptr;
+    return (C2D_SpriteSheet)&s_dummySheet;
+}
+C2D_Image C2D_SpriteSheetGetImage(C2D_SpriteSheet sheet, size_t index) {
+    (void)sheet; (void)index;
+    C2D_Image img = { &s_dummyTex, &s_dummySub };
+    return img;
+}
 void C2D_SpriteSheetFree(C2D_SpriteSheet sheet) { (void)sheet; }
 
 }
+
