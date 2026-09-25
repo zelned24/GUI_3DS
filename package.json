@@ -5,9 +5,10 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
+    "dev": "node server.js",
+    "build": "node test/run_tests.js",
     "start": "node server.js",
-    "test": "node test/run_tests.js",
-    "build:romfs": "node scripts/build_romfs.js"
+    "test": "node test/run_tests.js"
   },
   "keywords": [
     "3ds",

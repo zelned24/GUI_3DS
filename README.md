@@ -1,225 +1,269 @@
-# 3DS UI Game Creation Studio — PokéRogue 3DS Edition
+# 3DS UI Game Creation Studio
 
-Visual IDE, authoring environment, deterministic battle engine, and C++/RomFS build pipeline for adapting **PokéRogue** to the **Nintendo 3DS** (devkitARM / Citro2D).
+Visual IDE and deterministic C++ code generation studio for Nintendo 3DS interfaces, specialized for the **PokéRogue 3DS** project.
 
 ```text
-POKÉROGUE UPSTREAM
-(pokerogue, pokerogue-assets, pokerogue-locales)
-        │
-        ▼ [Frozen Git Revisions & Provenance Manifest]
-ADAPTER & IMPORT PIPELINE
-(PokerogueImporter, PokerogueManifest, ImportCache, ProvenanceReport)
-        │
-        ▼ [Canonical Lossless Models & Asset Resolvers]
-DATA STUDIO & OVERRIDES
-(Base Data + Studio Overrides = Final Build Data)
-   ┌────┴────────────────────────┐
-   ▼                             ▼
-UI STUDIO (Dual Screen)     BATTLE LAB (Deterministic Sim)
-- Top (400x240)             - Gen 9 Damage Breakdown
-- Bottom (320x240)          - Phase Queue & Rule Resolvers
-- 9 PokéRogue Components    - Explainable AI Inspector
-- Interactive Preview       - Deterministic PRNG & Replay
-   └────┬────────────────────────┘
-        ▼
-C++ & ROMFS BUILD PIPELINE
-   ┌────┴────────────────────────┐
-   ▼                             ▼
-C++ Code Generator           RomFS Binary Exporter
-(devkitARM / Citro2D)        (species.bin, moves.bin, VRAM/RAM Budget)
+┌─────────────────────────────────────────────────────────┐
+│              3DS UI GAME CREATION STUDIO               │
+│                                                         │
+│   Diseñar → Previsualizar → Validar → Generar C++      │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## 1. Quick Start
 
-### Requisitos Previos
+### Requisitos previos
 - **Node.js** (v18 o superior). Probado en Node v24.
 - Navegador moderno (Chrome, Edge, Firefox).
 
-### Iniciar el Studio IDE
+### Iniciar el Studio
+Desde la raíz del proyecto (`c:\DZ\Proyectos\3ds_GUI`):
+
 ```bash
-# Iniciar el servidor local
+# Iniciar el servidor local del Studio
 npm start
-# o:
+# o directamente:
 node server.js
 ```
+
 Abre en tu navegador:
 👉 **[http://localhost:3000](http://localhost:3000)**
 
-### Ejecutar Pruebas Automatizadas (100% Deterministas)
+### Ejecutar las Pruebas Automatizadas
 ```bash
 npm test
 # o:
 node test/run_tests.js
 ```
 
-### Compilar RomFS Binario para Nintendo 3DS
-```bash
-npm run build:romfs
+---
+
+## 2. Arquitectura del Proyecto
+
+El sistema está estructurado bajo una separación estricta de responsabilidades:
+
+```text
+Editor UI (HTML / CSS / Vanilla JS)
+    ↓
+Project Model (project.json, screens/*.json)
+    ↓
+Preview Runtime (Simulador interactivo 3DS)
+    ↓
+Validator (Reglas de resolución y límites 3DS)
+    ↓
+Code Generator (Salida C++ determinista)
+    ↓
+Target Nintendo 3DS (Citro2D / devkitARM)
+```
+
+### Estructura de Directorios
+
+```text
+3ds_GUI/
+├── package.json                   # Configuración de scripts y metadatos
+├── server.js                      # Servidor local Node.js con APIs de persistencia y generación
+├── README.md                      # Esta documentación
+├── Plan_de_trabajo.md             # Plan maestro del proyecto
+│
+├── public/                        # Frontend del Studio IDE
+│   ├── index.html                 # Shell del IDE (Header, Canvas dual, Sidebar, Inspector)
+│   ├── css/
+│   │   ├── main.css               # Tema oscuro estilo Figma/Game Studio
+│   │   └── preview.css            # Chasis 3DS, bisagra física, D-pad y botones
+│   └── js/
+│       ├── core/
+│       │   ├── ProjectModel.js    # Estado reactivo del proyecto, pantallas y componentes
+│       │   ├── HistoryManager.js  # Pila de comandos Undo / Redo (Ctrl+Z, Ctrl+Y)
+│       │   └── Validator.js       # Validación de resoluciones 3DS, bounds e IDs únicos
+│       ├── components/
+│       │   ├── BaseComponent.js   # Clase base abstracta de componentes
+│       │   ├── ComponentRegistry.js # Registro y fábrica extensible de componentes
+│       │   ├── RogueBox.js        # Panel biselado estilo PokéRogue
+│       │   ├── PixelText.js       # Texto pixel-perfect con sombra
+│       │   └── TouchButton.js     # Botón táctil e interactivo con FocusManager
+│       ├── editor/
+│       │   ├── CanvasRenderer.js  # Renderizado dual (Top 400x240, Bottom 320x240)
+│       │   ├── SelectionManager.js# Selección simple/múltiple y handles
+│       │   ├── DragResizeManager.js# Arrastre y redimensión con pixel snapping
+│       │   ├── Inspector.js       # Inspector bidireccional de propiedades
+│       │   └── Hierarchy.js       # Árbol de capas, visibilidad y reordenamiento
+│       ├── preview/
+│       │   └── PreviewRuntime.js  # Simulador interactivo 3DS con D-Pad, A/B/X/Y y táctil
+│       ├── generator/
+│       │   └── CodeGenerator.js   # Generador determinista C++ (.hpp y .cpp)
+│       └── app.js                 # Orquestador del IDE y atajos de teclado
+│
+├── project/                       # Proyecto activo de interfaces 3DS
+│   ├── project.json               # Configuración global del proyecto
+│   ├── screens/                   # Pantallas declarativas en JSON
+│   │   └── ExampleScreen.json     # Pantalla de prueba con RogueBox, PixelText, TouchButton
+│   └── generated/                 # Artefactos C++ generados (NO editar manualmente)
+│       ├── include/screens/
+│       │   └── ExampleScreen.hpp  # Header Screen de Citro2D / devkitARM
+│       └── src/screens/
+│           └── ExampleScreen.cpp  # Implementación nativa C++
+│
+└── test/
+    └── run_tests.js               # Suite de tests unitarios y regression golden tests
 ```
 
 ---
 
-## 2. UI Studio (Entorno Visual Dual-Screen)
+## 3. Especificaciones del Canvas Dual 3DS
 
-El UI Studio permite diseñar y previsualizar pantallas para el factor de forma dual de la Nintendo 3DS:
-- **Pantalla Superior (Top Screen):** 400 × 240 píxeles.
-- **Pantalla Inferior (Bottom Screen):** 320 × 240 píxeles con pantalla táctil resistiva.
+Nintendo 3DS posee dos pantallas físicas con características diferentes:
 
-### Catálogo de Componentes PokéRogue 3DS
-1. **RogueBox:** Marco biselado estilizado con bordes característicos de PokéRogue.
-2. **PixelText:** Texto tipográfico bitmap pixel-perfect con soporte para alineación y color.
-3. **TouchButton:** Botón táctil para stylus y navegación por D-Pad con `FocusManager`.
-4. **HealthBar:** Barra de vida reactiva con transición de colores (verde > 50%, amarillo > 20%, rojo <= 20%) y texto numérico entero.
-5. **MoveButton:** Botón de movimiento en combate con tipo elemental, categoría (Físico/Especial/Estado) y PP restantes.
-6. **StatusBadge:** Placa de condición de estado (`PAR`, `BRN`, `PSN`, `TOX`, `SLP`, `FRZ`, `FNT`).
-7. **PokemonSprite:** Renderizador de sprites y mini-iconos reales de PokéRogue con variantes (front, back, shiny, female). Detecta recursos faltantes con banner **`MISSING ASSET`** (sin emojis falsos en producción).
-8. **WaveIndicator:** Barra de progreso de oleadas (1 a 200), bioma actual y alerta visual en oleadas de jefes (múltiplos de 10).
-9. **PokemonGrid:** Rejilla de selección de starters para la pantalla táctil inferior (coste en puntos, marca de variocolor, estadísticas base y navegación táctil/cruceta).
+| Pantalla | Ancho lógico | Alto lógico | Entrada |
+| :--- | :--- | :--- | :--- |
+| **Top Screen** | **400 px** | **240 px** | Visual / 3D estereoscópico |
+| **Bottom Screen** | **320 px** | **240 px** | Pantalla táctil resistiva (Touch) |
 
-### Navegación y Atajos
-- **`Ctrl+P`:** Búsqueda global instantánea en Especies, Movimientos, Habilidades, Pantallas y Recursos.
-- **`Ctrl+Z` / `Ctrl+Y`:** Pila completa de Deshacer / Rehacer.
-- **`🎮 Preview`:** Simulador interactivo 3DS con D-Pad, botones A/B/X/Y y pantalla táctil inferior.
-- **`⚡ Generate C++`:** Generación de código fuente nativo C++ listo para devkitARM/Citro2D.
+### Reglas de Layout y Pixel Snapping
+- **Coordenadas Enteras:** Todas las posiciones `x`, `y`, `width` y `height` son automáticamente redondeadas con `Math.round()` para garantizar nitidez pixel-perfect en la pantalla de la 3DS.
+- **Bisagra (Hinge):** El modo dual representa la separación física entre las pantallas con el bisel de la consola.
+- **Modos de Visualización:**
+  - `Dual`: Ambas pantallas alineadas con bisagra.
+  - `Top`: Solo pantalla superior (400×240).
+  - `Bottom`: Solo pantalla inferior táctil (320×240).
+- **Zoom:** 1×, 2×, 3×, 4× y `Fit` (ajuste a ventana).
 
 ---
 
-## 3. Data Studio (Datos Reales de PokéRogue)
+## 4. Atajos de Teclado del Editor
 
-El Data Studio sustituye cualquier simulación o mock hardcodeado por la ingestión directa de las fuentes oficiales de PokéRogue:
-
-- **12 Categorías Completas:** Species, Forms, Moves, Abilities, Items, Natures, Types, Statuses, Biomes, Trainers, Encounters, Starters y Modifiers.
-- **Lossless-First Import:** Toda propiedad no interpretable por el editor visual en una fase preliminar se conserva íntegra mediante `preserveRawData` y se audita en `unsupportedFeatures`.
-- **Previsualización de Assets Reales:** Resolución de iconos generacionales (`images/pokemon/icons/<gen>/<id>.png`) y sprites mediante `PokemonSpriteResolver`.
-- **Árbol de Dependencias:** Inspección interactiva bidireccional ("¿Qué se rompe si modifico esta especie o movimiento?").
-- **Upstream Diff:** Comparador visual entre la versión congelada upstream de PokéRogue y las modificaciones activas.
-
----
-
-## 4. Battle Lab (Motor de Combate Determinista 3DS)
-
-El Battle Lab proporciona una simulación determinista exacta de combate Pokémon adaptada a las restricciones de la 3DS:
-
-- **RNG Determinista:** Eliminación total de `Math.random()` y `Date.now()`. Generador LCG semillado (`RNG.js`) con numeración secuencial monotónica (`sequenceNumber`).
-- **Desglose de Daño Gen 9:** Inspección paso a paso de cada variable:
-  $$\text{Damage} = \left(\frac{2 \times \text{Level} / 5 + 2}{50} \times \text{Power} \times \frac{\text{Atk}}{\text{Def}} + 2\right) \times \text{STAB} \times \text{Type} \times \text{Crit} \times \text{Random}$$
-- **Módulos Resolutores Independientes:**
-  - `TurnOrderResolver`: Prioridad de movimientos y empates de velocidad deterministas.
-  - `AccuracyResolver`: Precisión y evasión según etapas.
-  - `DamageResolver`: Fórmulas Gen 9 con efectividad de tipos y STAB.
-  - `AbilityResolver`: Habilidades complejas (`Static` inflige parálisis por contacto con 30% de probabilidad; `Sturdy` sobrevive golpes letales con 100% de salud).
-  - `StatusResolver`: Restricción de movimiento por parálisis/sueño y daño residual por quemadura/veneno.
-  - `AIAdapter`: Inteligencia artificial explicable con puntuación detallada por candidato y lista de motivos.
-- **Pila de Fases:** Procesamiento atómico en cola (`SpeedOrderPhase`, `ActionPhase`, `TurnEndPhase`).
-- **Replay y Snapshots:** Pausa, avance paso a paso y rebobinado completo a cualquier turno del combate.
+| Atajo | Acción |
+| :--- | :--- |
+| `Ctrl + Z` | Deshacer (Undo) |
+| `Ctrl + Shift + Z` / `Ctrl + Y` | Rehacer (Redo) |
+| `Ctrl + D` | Duplicar componente seleccionado |
+| `Delete` / `Backspace` | Eliminar componente seleccionado |
+| `Ctrl + S` | Guardar proyecto a disco |
+| `Shift + Click` | Selección múltiple |
+| `Rueda del ratón` | Zoom dinámico sobre el canvas |
+| `Botón central del ratón / Alt + Drag` | Desplazamiento panorámico (Pan) |
 
 ---
 
-## 5. Pipeline de Importación y Proveniencia
+## 5. Cómo Crear una Nueva Screen
 
-### Configuración de Fuentes Congeladas (`project/external/pokerogue.json`)
-Las fuentes se gestionan como dependencias externas versionadas con hashes de commit congelados:
-```json
-{
-  "source": {
-    "repository": "https://github.com/pagefaultgames/pokerogue",
-    "branch": "beta",
-    "revision": "8555c08c823b856cbec4eb99ca84ea52a955836d"
-  },
-  "assets": {
-    "repository": "https://github.com/pagefaultgames/pokerogue-assets",
-    "branch": "beta",
-    "revision": "87426a79611f9d212c4dc8af58e2834a05b93725"
-  },
-  "locales": {
-    "repository": "https://github.com/pagefaultgames/pokerogue-locales",
-    "branch": "main",
-    "revision": "23aea1cb0da5a0b15b836f3c243791591cc42303"
+1. En la barra superior, haz clic en el botón **`+ New`** junto al selector de pantallas.
+2. Ingresa el nombre de la pantalla (ejemplo: `BattleScreen`, `StarterSelectScreen`).
+3. El editor inicializará automáticamente la pantalla con las dimensiones de 3DS y la añadirá al árbol.
+4. Arrastra o añade componentes desde la barra de herramientas (**RogueBox**, **PixelText**, **TouchButton**).
+5. Ajusta sus propiedades en el **Inspector**.
+6. Haz clic en **`💾 Save`** para persistir el archivo en `project/screens/[ScreenName].json`.
+
+---
+
+## 6. Cómo Agregar un Nuevo Componente (Arquitectura Schema-Driven)
+
+Gracias a la arquitectura basada en **`UINode`** y **`PropertySystem`**, agregar un componente **NO requiere modificar el Inspector ni el Canvas**:
+
+### Paso 1: Crear la clase del componente con su Schema
+Crea `public/js/components/HealthBar.js` heredando de `BaseComponent`:
+
+```javascript
+import { BaseComponent } from './BaseComponent.js';
+import { Props } from '../core/PropertySystem.js';
+
+export class HealthBar extends BaseComponent {
+  static schema = {
+    type: 'HealthBar',
+    displayName: 'Health Bar',
+    category: 'Combat',
+    icon: '💚',
+    description: 'Barra de vida dinámica para Pokémon',
+    capabilities: ['render'],
+    properties: {
+      currentHP: Props.integer('Current HP', 100, { min: 0, max: 999, category: 'Data' }),
+      maxHP: Props.integer('Max HP', 100, { min: 1, max: 999, category: 'Data' }),
+      barColor: Props.color('Bar Color', '#22c55e', { category: 'Style' }),
+      backgroundColor: Props.color('Background Color', '#1f2937', { category: 'Style' })
+    }
+  };
+
+  constructor(data = {}) {
+    super({
+      ...data,
+      type: 'HealthBar',
+      width: Math.round(data.width ?? 120),
+      height: Math.round(data.height ?? 10)
+    });
+  }
+
+  draw(ctx, options = {}) {
+    const { currentHP, maxHP, barColor, backgroundColor } = this.properties;
+    const ratio = Math.max(0, Math.min(1, currentHP / maxHP));
+    
+    // Fondo de la barra
+    ctx.fillStyle = backgroundColor || '#1f2937';
+    ctx.fillRect(0, 0, this.width, this.height);
+
+    // Barra de vida
+    ctx.fillStyle = barColor || '#22c55e';
+    ctx.fillRect(1, 1, Math.round((this.width - 2) * ratio), this.height - 2);
   }
 }
 ```
 
-### Cumplimiento de Licencias (`provenance-report.json`)
-- El código original de PokéRogue está bajo licencia **AGPL-v3.0-only**. Nuestro importador lee, normaliza y transforma la información en modelos canónicos en lugar de duplicar clases TypeScript directamente.
-- Los assets siguen el estándar **REUSE**.
-- Cada entidad importada almacena su repositorio de origen, ruta, revisión congelada y referencia de licencia.
+### Paso 2: Registrarlo en `ComponentRegistry.js`
+En `public/js/components/ComponentRegistry.js`:
 
----
+```javascript
+import { HealthBar } from './HealthBar.js';
 
-## 6. Sistema de Overrides (No Destructivo)
-
-Para adaptar PokéRogue a las limitaciones de memoria y balance específico de la 3DS, el Studio implementa una arquitectura en tres capas:
-
-$$\text{PokéRogue Upstream (Base Data)} \;\;+\;\; \text{Studio Override} \;\;=\;\; \text{Final Build Data}$$
-
-- Los archivos upstream nunca se modifican directamente.
-- Las sobreescrituras se guardan en `project/external/overrides.json`.
-- La pantalla de diff permite auditar qué parámetros de una especie (PS base, ataques aprendidos, coste de starter) han sido ajustados localmente para 3DS.
-
----
-
-## 7. Pipeline de Compilación RomFS y Generación C++
-
-### Formato Binario Compacto para Citro2D (`RomFS/data/`)
-En lugar de procesar TypeScript en runtime en la 3DS, el Studio empaqueta tablas binarias ultra-compactas con acceso $O(1)$:
-- **`species.bin`:** Registros binarios de 24 bytes (ID, tipos, estadísticas base PS/Ataque/Defensa/At.Esp/Def.Esp/Velocidad, IDs de habilidades).
-- **`moves.bin`:** Registros binarios de 12 bytes (ID, tipo, categoría, potencia, precisión, PP, prioridad, máscaras de flags de contacto y código de efecto secundario).
-- **`manifest.json`:** Manifiesto determinista exportado sin timestamps para garantizar builds reproducibles (Git diff limpio).
-
-### Presupuesto de Hardware 3DS (`Resource Budget`)
-El sistema calcula en tiempo real las restricciones del hardware:
-- **VRAM (PICA200):** Límite máximo de 6 MB para texturas y atlas.
-- **RAM Lineal:** Límite de 96 MB de memoria de aplicación en consolas Old 3DS.
-- **Draw Calls:** Conteo estimado de llamadas de dibujado simultáneas en pantalla superior e inferior.
-
-### Generador C++ Determinista
-Genera clases C++ (`.hpp` y `.cpp`) para `devkitARM` y la librería gráfica `Citro2D`:
-- Salida determinista ordenada por `zIndex` y alfabéticamente por `id`.
-- Conversión de colores al formato nativo Citro2D `0xAABBGGRR`.
-- Vinculación automática de widgets con `FocusManager` y bucle de dibujado dual (`drawTop` / `drawBottom`).
-
----
-
-## 8. Arquitectura de Directorios
-
-```text
-3ds_GUI/
-├── package.json                         # Dependencias, scripts (start, test, build:romfs)
-├── server.js                            # Servidor local con API REST, proxy de assets y exportación
-├── README.md                            # Esta documentación completa
-│
-├── project/
-│   ├── external/                        # Integración con repositorios de PokéRogue
-│   │   ├── pokerogue.json               # Configuración de repositorios y revisiones congeladas
-│   │   ├── manifest.json                # Manifiesto de proveniencia determinista
-│   │   ├── provenance-report.json       # Auditoría de licencias AGPL-3.0 / REUSE
-│   │   ├── overrides.json               # Sobreescrituras de balance locales 3DS
-│   │   └── cache/                       # Caché de assets descargados
-│   ├── screens/                         # Definiciones de pantallas en formato JSON
-│   │   ├── ExampleScreen.json           # Pantalla de menú inicial
-│   │   └── StarterSelectScreen.json     # Pantalla de selección de Starters (Vertical Slice 2)
-│   └── generated/                       # Salida generada por el Studio
-│       ├── include/screens/             # Cabeceras C++ (.hpp)
-│       ├── src/screens/                 # Fuentes C++ (.cpp)
-│       └── romfs/data/                  # Tablas binarias empaquetadas (species.bin, moves.bin)
-│
-├── public/                              # Frontend del Game Creation Studio
-│   ├── index.html                       # Shell del IDE (Header, Canvas dual, Paneles, Modales)
-│   ├── css/main.css                     # Estilos tema Game Studio (Data Studio, Battle Lab, Inspector)
-│   └── js/
-│       ├── core/                        # Núcleo del editor (ProjectModel, Transform, PropertySystem)
-│       ├── components/                  # Catálogo de 9 componentes UI para 3DS
-│       ├── editor/                      # Renderizado en canvas, selección y jerarquía
-│       ├── preview/                     # Simulador 3DS interactivo
-│       ├── data/                        # Modelos canónicos, importador, proveniencia y Data Studio
-│       ├── battle/                      # Motor de combate determinista, Battle Lab y resolutores
-│       └── generator/                   # Generador C++ (CodeGenerator) y empaquetador binario (RomFSExporter)
-│
-├── scripts/
-│   └── build_romfs.js                   # Script CLI para empaquetado de RomFS y cálculo de memoria
-│
-└── test/
-    └── run_tests.js                     # Suite de pruebas automatizadas (30/30 tests)
+ComponentRegistry.register('HealthBar', HealthBar);
 ```
+
+¡El **Inspector** detectará automáticamente el esquema y generará los controles visuales correspondientes sin tocar ningún otro archivo!
+
+---
+
+## 7. Cómo Modificar el Generador C++ (Contrato de Exporters)
+
+El generador determinista se encuentra en `public/js/generator/CodeGenerator.js` y utiliza el patrón **Exporter**:
+
+Para soportar un nuevo componente en C++:
+```javascript
+class HealthBarExporter {
+  getIncludes() {
+    return ['#include "ui/health_bar.hpp"'];
+  }
+
+  getMember(comp, varName) {
+    return `std::unique_ptr<HealthBar> ${varName};`;
+  }
+
+  getInitialization(comp, varName) {
+    return [
+      `    ${varName} = std::make_unique<HealthBar>(${comp.x}.0f, ${comp.y}.0f, ${comp.width}.0f, ${comp.height}.0f);`
+    ];
+  }
+
+  getDrawCall(comp, varName) {
+    return `    if (${varName}) ${varName}->draw(renderer);`;
+  }
+}
+
+CodeGenerator.registerExporter('HealthBar', new HealthBarExporter());
+```
+
+### Determinismo Estricto
+El generador garantiza que:
+- Los componentes se ordenan siempre por `zIndex` ascendente, luego alfabéticamente por `id`.
+- Los colores se exportan en formato nativo Citro2D `0xAABBGGRR`.
+- No se generan timestamps, IDs aleatorios ni saltos de línea irregulares, asegurando que Git diff permanezca 100% limpio.
+
+---
+
+## 8. Flujo de Validación y Exportación
+
+1. **Validación:** Haz clic en **`🔍 Validate`**. El sistema verificará:
+   - Coordenadas enteras (pixel snapping).
+   - Bounds: detecta si algún elemento excede los 400px en Top o 320px en Bottom.
+   - Unicidad estricta de IDs.
+   - Referencias circulares o padres inexistentes.
+2. **Previsualización:** Haz clic en **`🎮 Preview`** para abrir el simulador 3DS interactivo. Prueba la navegación con la cruceta (D-Pad), botones físicos A/B/X/Y y toques en la pantalla inferior.
+3. **Generar C++:** Haz clic en **`⚡ Generate C++`**. El código generado se guardará directamente en `project/generated/` y se mostrará en pantalla listo para copiar o descargar.

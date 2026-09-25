@@ -3,10 +3,6 @@ import { PixelText } from './PixelText.js';
 import { TouchButton } from './TouchButton.js';
 import { HealthBar } from './HealthBar.js';
 import { MoveButton } from './MoveButton.js';
-import { StatusBadge } from './StatusBadge.js';
-import { PokemonSprite } from './PokemonSprite.js';
-import { WaveIndicator } from './WaveIndicator.js';
-import { PokemonGrid } from './PokemonGrid.js';
 
 /**
  * ComponentRegistry - Registry for instantiating and describing 3DS UI components & nodes.
@@ -85,33 +81,4 @@ ComponentRegistry.register('MoveButton', MoveButton, {
   icon: '⚡',
   description: 'Battle command button bound to Pokémon move data'
 });
-
-ComponentRegistry.register('StatusBadge', StatusBadge, {
-  name: 'Status Badge',
-  category: 'PokéRogue Data Views',
-  icon: '🏷️',
-  description: 'Status ailment indicator bound to Pokémon status condition'
-});
-
-ComponentRegistry.register('PokemonSprite', PokemonSprite, {
-  name: 'Pokemon Sprite',
-  category: 'PokéRogue Data Views',
-  icon: '👾',
-  description: 'Renders Pokémon sprite or icon bound to upstream PokéRogue asset path'
-});
-
-ComponentRegistry.register('WaveIndicator', WaveIndicator, {
-  name: 'Wave Indicator',
-  category: 'PokéRogue Data Views',
-  icon: '🌊',
-  description: 'Displays current run wave number, biome and boss wave indicator'
-});
-
-ComponentRegistry.register('PokemonGrid', PokemonGrid, {
-  name: 'Pokemon Grid (Starters)',
-  category: 'PokéRogue Data Views',
-  icon: '📊',
-  description: 'Grid of starter Pokémon showing Cost, Shiny, Stats and responsive to Touch & D-Pad'
-});
-
 
