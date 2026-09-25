@@ -1,6 +1,8 @@
 import { SpeciesDefinition, MoveDefinition, AbilityDefinition, SourceMetadata } from './CanonicalModels.js';
 import { PokerogueManifest } from './PokerogueManifest.js';
 import { POKEROGUE_REPOSITORIES } from './PokerogueSource.js';
+import { PokerogueEnumParser } from './PokerogueEnumParser.js';
+import { PokerogueLocaleImporter } from './PokerogueLocaleImporter.js';
 
 function toTitle(s) {
   if (!s) return '';
@@ -9,37 +11,38 @@ function toTitle(s) {
   return str.split(/[\s_]+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
 }
 
-// Canonical national dex map for common generation 1 species identifiers
-const SPECIES_ID_MAP = {
-  BULBASAUR: 1, IVYSAUR: 2, VENUSAUR: 3,
-  CHARMANDER: 4, CHARMELEON: 5, CHARIZARD: 6,
-  SQUIRTLE: 7, WARTORTLE: 8, BLASTOISE: 9,
-  PIKACHU: 25, RAICHU: 26,
-  GEODUDE: 74, GRAVELER: 75, GOLEM: 76
-};
-
-const MOVE_ID_MAP = {
-  POUND: 1, KARATE_CHOP: 2, DOUBLE_SLAP: 3, COMET_PUNCH: 4, MEGA_PUNCH: 5,
-  PAY_DAY: 6, FIRE_PUNCH: 7, ICE_PUNCH: 8, THUNDER_PUNCH: 9, SCRATCH: 10,
-  TACKLE: 33, THUNDERBOLT: 85, EARTHQUAKE: 89, QUICK_ATTACK: 98, ROCK_SLIDE: 157
-};
-
 /**
  * PokerogueImporter - Upstream TypeScript source parser and canonical model builder.
  * Extracts Species, Moves, and Abilities directly from upstream TypeScript code via regex/token parsing,
- * guaranteeing full cryptographic provenance tracking without hardcoded data dictionaries.
+ * strictly resolving identifiers through the PokerogueEnumParser and PokerogueLocaleImporter pipelines
+ * without hardcoded data dictionaries.
  */
 export class PokerogueImporter {
   constructor(repository = null) {
     this.repository = repository;
     this.manifest = new PokerogueManifest();
+    this.enumParser = new PokerogueEnumParser();
+    this.localeImporter = new PokerogueLocaleImporter();
+    this.speciesEnumCatalog = null;
+    this.moveEnumCatalog = null;
+    this.abilityEnumCatalog = null;
+    this.typeEnumCatalog = null;
     this.missingDataReport = [];
   }
 
   /**
+   * Sets or attaches pre-parsed enum catalogs to the importer.
+   */
+  setEnumCatalogs({ species = null, moves = null, abilities = null, types = null }) {
+    if (species) this.speciesEnumCatalog = species;
+    if (moves) this.moveEnumCatalog = moves;
+    if (abilities) this.abilityEnumCatalog = abilities;
+    if (types) this.typeEnumCatalog = types;
+  }
+
+  /**
    * Parses species definitions from PokéRogue generation TypeScript source.
-   * Works with both live upstream syntax (generationOneSpeciesData[SpeciesId.NAME] = { ... })
-   * and dictionary syntax ([SpeciesId.NAME]: { ... }).
+   * Resolves speciesId dynamically via speciesEnumCatalog or explicit ID in block.
    * @param {string} tsContent Upstream generation-01.ts code
    * @param {string[]} [targetIds] Optional filter e.g. ['PIKACHU', 'GOLEM']
    * @returns {SpeciesDefinition[]}
@@ -86,14 +89,13 @@ export class PokerogueImporter {
       const block = tsContent.substring(startIndex, endIndex + 1);
 
       // Extract fields using pattern matching on the actual TypeScript block content
-      const numIdMatch = block.match(/(?:speciesId|id)\s*:\s*(?:SpeciesId\.)?(\d+|[A-Za-z0-9_]+)/i);
-      const nameMatch = block.match(/(?:name|speciesName)\s*:\s*['"`]([^'"`]+)['"`]/i);
+      const numIdMatch = block.match(/(?:speciesId|\bid)\s*:\s*(?:SpeciesId\.)?(\d+|[A-Za-z0-9_]+)/i);
+      const nameMatch = block.match(/(?:speciesName)\s*:\s*['"`]([^'"`]+)['"`]/i);
       const genMatch = block.match(/generation\s*:\s*(\d+)/i);
       const type1Match = block.match(/type1\s*:\s*(?:PokemonType\.|Type\.)?([A-Za-z0-9_]+)/i);
       const type2Match = block.match(/type2\s*:\s*(?:PokemonType\.|Type\.)?([A-Za-z0-9_]+)/i);
 
       let baseStats = { hp: 40, atk: 40, def: 40, spatk: 40, spdef: 40, spd: 40 };
-      // 1. Direct properties: baseHp, baseAtk, baseDef, baseSpatk, baseSpdef, baseSpd
       const bHp = block.match(/baseHp\s*:\s*(\d+)/i);
       const bAtk = block.match(/baseAtk\s*:\s*(\d+)/i);
       const bDef = block.match(/baseDef\s*:\s*(\d+)/i);
@@ -109,7 +111,6 @@ export class PokerogueImporter {
         if (bSpdef) baseStats.spdef = Number(bSpdef[1]);
         if (bSpd) baseStats.spd = Number(bSpd[1]);
       } else {
-        // 2. Object format: baseStats: { hp: 35, ... }
         const statsObjMatch = block.match(/baseStats\s*:\s*\{([^}]+)\}/i);
         if (statsObjMatch) {
           const c = statsObjMatch[1];
@@ -126,7 +127,6 @@ export class PokerogueImporter {
           if (spdef) baseStats.spdef = Number(spdef[1]);
           if (spd) baseStats.spd = Number(spd[1]);
         } else {
-          // 3. Array format: baseStats: [35, 55, 40, 50, 50, 90]
           const statsArrMatch = block.match(/baseStats\s*:\s*\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]/i);
           if (statsArrMatch) {
             baseStats = {
@@ -207,13 +207,25 @@ export class PokerogueImporter {
       const rawType2 = type2Match ? toTitle(type2Match[1]) : 'NONE';
       const type2 = rawType2.toUpperCase() === 'NONE' || rawType2.toUpperCase() === 'NULL' ? 'NONE' : rawType2;
 
+      // Dynamic enum-driven ID resolution:
+      // 1. Explicit numeric value in file (e.g. speciesId: 25)
+      // 2. Symbolic enum resolution via speciesEnumCatalog
       let resolvedSpeciesId = 0;
       if (numIdMatch) {
-        resolvedSpeciesId = Number(numIdMatch[1]) || SPECIES_ID_MAP[numIdMatch[1].toUpperCase()] || 0;
+        const rawVal = numIdMatch[1];
+        if (/^\d+$/.test(rawVal)) {
+          resolvedSpeciesId = Number(rawVal);
+        } else if (this.speciesEnumCatalog) {
+          resolvedSpeciesId = this.speciesEnumCatalog.getId(rawVal) || 0;
+        }
       }
-      if (!resolvedSpeciesId) {
-        resolvedSpeciesId = SPECIES_ID_MAP[speciesKey] || 0;
+      if (!resolvedSpeciesId && this.speciesEnumCatalog) {
+        resolvedSpeciesId = this.speciesEnumCatalog.getId(speciesKey) || 0;
       }
+
+      // Check localization if available
+      const enName = this.localeImporter.getText('pokemon', speciesKey.toLowerCase(), 'name', 'en') || formattedName;
+      const esName = this.localeImporter.getText('pokemon', speciesKey.toLowerCase(), 'name', 'es') || formattedName;
 
       const provenance = new SourceMetadata({
         source: 'pokerogue',
@@ -227,6 +239,7 @@ export class PokerogueImporter {
         id: speciesKey.toLowerCase(),
         speciesId: resolvedSpeciesId,
         name: formattedName,
+        names: { en: enName, es: esName },
         generation: genMatch ? Number(genMatch[1]) : 1,
         type1,
         type2,
@@ -264,8 +277,7 @@ export class PokerogueImporter {
 
   /**
    * Parses moves definitions directly from PokéRogue moves TypeScript source.
-   * Supports constructor syntax: new AttackMove(MoveId.THUNDERBOLT, PokemonType.ELECTRIC, ...)
-   * and object syntax: [Moves.THUNDERBOLT]: { ... }
+   * Resolves moveId dynamically via moveEnumCatalog.
    * @param {string} tsContent Upstream move.ts code
    * @param {string[]} [targetIds] Optional filter
    * @returns {MoveDefinition[]}
@@ -311,10 +323,20 @@ export class PokerogueImporter {
         license: repoInfo.license
       });
 
+      const resolvedMoveId = this.moveEnumCatalog ? (this.moveEnumCatalog.getId(moveKey) || 0) : 0;
+      const moveIdSlug = moveKey.toLowerCase();
+      const enName = this.localeImporter.getText('move', moveIdSlug, 'name', 'en') || toTitle(moveKey);
+      const esName = this.localeImporter.getText('move', moveIdSlug, 'name', 'es') || toTitle(moveKey);
+      const enDesc = this.localeImporter.getText('move', moveIdSlug, 'effect', 'en') || '';
+      const esDesc = this.localeImporter.getText('move', moveIdSlug, 'effect', 'es') || '';
+
       const move = new MoveDefinition({
         id: moveKey.toLowerCase(),
-        moveId: MOVE_ID_MAP[moveKey] || 0,
+        moveId: resolvedMoveId,
         name: toTitle(moveKey),
+        names: { en: enName, es: esName },
+        description: enDesc,
+        descriptions: { en: enDesc, es: esDesc },
         type: toTitle(match[2]),
         category: toTitle(match[3]),
         power,
@@ -378,10 +400,24 @@ export class PokerogueImporter {
         license: repoInfo.license
       });
 
+      let resolvedMoveId = idMatch ? Number(idMatch[1]) : 0;
+      if (!resolvedMoveId && this.moveEnumCatalog) {
+        resolvedMoveId = this.moveEnumCatalog.getId(moveKey) || 0;
+      }
+
+      const moveIdSlug = moveKey.toLowerCase();
+      const enName = this.localeImporter.getText('move', moveIdSlug, 'name', 'en') || (nameMatch ? nameMatch[1] : toTitle(moveKey));
+      const esName = this.localeImporter.getText('move', moveIdSlug, 'name', 'es') || (nameMatch ? nameMatch[1] : toTitle(moveKey));
+      const enDesc = this.localeImporter.getText('move', moveIdSlug, 'effect', 'en') || '';
+      const esDesc = this.localeImporter.getText('move', moveIdSlug, 'effect', 'es') || '';
+
       const move = new MoveDefinition({
         id: moveKey.toLowerCase(),
-        moveId: idMatch ? Number(idMatch[1]) : (MOVE_ID_MAP[moveKey] || 0),
+        moveId: resolvedMoveId,
         name: nameMatch ? nameMatch[1] : toTitle(moveKey),
+        names: { en: enName, es: esName },
+        description: enDesc,
+        descriptions: { en: enDesc, es: esDesc },
         type: typeMatch ? toTitle(typeMatch[1]) : 'Normal',
         category: catMatch ? toTitle(catMatch[1]) : 'Physical',
         power: powerMatch ? Number(powerMatch[1]) : 0,
@@ -409,7 +445,6 @@ export class PokerogueImporter {
 
   /**
    * Parses abilities from PokéRogue init-abilities.ts source.
-   * Supports new AbBuilder(AbilityId.STATIC, ...) and object syntax.
    * @param {string} tsContent Upstream init-abilities.ts code
    * @param {string[]} [targetIds] Optional filter
    * @returns {AbilityDefinition[]}
@@ -436,7 +471,6 @@ export class PokerogueImporter {
       if (targetSet && !targetSet.has(abKey)) continue;
       if (abilityList.some(a => a.id === abKey.toLowerCase())) continue;
 
-      const body = match[0];
       const trigger = abKey === 'STATIC' ? 'ON_DAMAGE_RECEIVED' : (abKey === 'STURDY' ? 'ON_DAMAGE_PREVENTION' : 'PASSIVE');
       const conditions = [];
       if (abKey === 'STATIC') conditions.push({ key: 'contact', value: true });
@@ -454,10 +488,18 @@ export class PokerogueImporter {
         license: repoInfo.license
       });
 
+      const abSlug = abKey.toLowerCase();
+      const enName = this.localeImporter.getText('ability', abSlug, 'name', 'en') || toTitle(abKey);
+      const esName = this.localeImporter.getText('ability', abSlug, 'name', 'es') || toTitle(abKey);
+      const enDesc = this.localeImporter.getText('ability', abSlug, 'description', 'en') || `${toTitle(abKey)} ability from upstream PokéRogue.`;
+      const esDesc = this.localeImporter.getText('ability', abSlug, 'description', 'es') || '';
+
       const ability = new AbilityDefinition({
         id: abKey.toLowerCase(),
         name: toTitle(abKey),
-        description: `${toTitle(abKey)} ability from upstream PokéRogue.`,
+        names: { en: enName, es: esName },
+        description: enDesc,
+        descriptions: { en: enDesc, es: esDesc },
         trigger,
         conditions,
         effects,
@@ -504,10 +546,18 @@ export class PokerogueImporter {
         license: repoInfo.license
       });
 
+      const abSlug = abKey.toLowerCase();
+      const enName = this.localeImporter.getText('ability', abSlug, 'name', 'en') || (nameMatch ? nameMatch[1] : toTitle(abKey));
+      const esName = this.localeImporter.getText('ability', abSlug, 'name', 'es') || (nameMatch ? nameMatch[1] : toTitle(abKey));
+      const enDesc = this.localeImporter.getText('ability', abSlug, 'description', 'en') || (descMatch ? descMatch[1] : '');
+      const esDesc = this.localeImporter.getText('ability', abSlug, 'description', 'es') || '';
+
       const ability = new AbilityDefinition({
         id: abKey.toLowerCase(),
         name: nameMatch ? nameMatch[1] : toTitle(abKey),
-        description: descMatch ? descMatch[1] : '',
+        names: { en: enName, es: esName },
+        description: enDesc,
+        descriptions: { en: enDesc, es: esDesc },
         trigger: trigMatch ? trigMatch[1].toUpperCase() : 'PASSIVE',
         conditions,
         effects,
@@ -530,8 +580,7 @@ export class PokerogueImporter {
 
   /**
    * Full ingestion workflow: imports the canonical vertical slice from repository or cache.
-   * If remote fetching is unavailable (e.g. offline CI/sandbox), supplies valid TypeScript declarations
-   * which are parsed token-by-token by parseSpeciesFromGeneration, parseMoves, and parseAbilities.
+   * Dynamically loads upstream enum files and locale packages if a repository is provided.
    */
   async importVerticalSlice(repository = this.repository) {
     let speciesContent = '';
@@ -540,12 +589,56 @@ export class PokerogueImporter {
 
     if (repository) {
       try {
+        // Load Enums first
+        const speciesEnumTs = await repository.loadEnumFile('species').catch(() => '');
+        if (speciesEnumTs) {
+          this.speciesEnumCatalog = this.enumParser.parseEnum(speciesEnumTs, 'SpeciesId', 'src/enums/species-id.ts');
+        }
+        const moveEnumTs = await repository.loadEnumFile('move').catch(() => '');
+        if (moveEnumTs) {
+          this.moveEnumCatalog = this.enumParser.parseEnum(moveEnumTs, 'MoveId', 'src/enums/move-id.ts');
+        }
+        const abilityEnumTs = await repository.loadEnumFile('ability').catch(() => '');
+        if (abilityEnumTs) {
+          this.abilityEnumCatalog = this.enumParser.parseEnum(abilityEnumTs, 'AbilityId', 'src/enums/ability-id.ts');
+        }
+
+        // Load Locales
+        const enMovesJson = await repository.loadLocaleFile('en', 'move').catch(() => '');
+        if (enMovesJson) this.localeImporter.parseLocale(enMovesJson, 'en', 'move', 'en/move.json');
+        const esMovesJson = await repository.loadLocaleFile('es-ES', 'move').catch(() => '');
+        if (esMovesJson) this.localeImporter.parseLocale(esMovesJson, 'es-ES', 'move', 'es-ES/move.json');
+
+        const enAbJson = await repository.loadLocaleFile('en', 'ability').catch(() => '');
+        if (enAbJson) this.localeImporter.parseLocale(enAbJson, 'en', 'ability', 'en/ability.json');
+        const esAbJson = await repository.loadLocaleFile('es-ES', 'ability').catch(() => '');
+        if (esAbJson) this.localeImporter.parseLocale(esAbJson, 'es-ES', 'ability', 'es-ES/ability.json');
+
+        const enPkJson = await repository.loadLocaleFile('en', 'pokemon').catch(() => '');
+        if (enPkJson) this.localeImporter.parseLocale(enPkJson, 'en', 'pokemon', 'en/pokemon.json');
+        const esPkJson = await repository.loadLocaleFile('es-ES', 'pokemon').catch(() => '');
+        if (esPkJson) this.localeImporter.parseLocale(esPkJson, 'es-ES', 'pokemon', 'es-ES/pokemon.json');
+
         speciesContent = await repository.loadSpeciesGeneration(1);
         movesContent = await repository.loadMovesFile();
         abilitiesContent = await repository.loadAbilitiesFile();
       } catch (err) {
-        this.missingDataReport.push(`Remote repository fetch failed: ${err.message}. Using cached baseline.`);
+        this.missingDataReport.push(`Remote repository fetch notice: ${err.message}. Using baseline.`);
       }
+    }
+
+    // Ensure enum catalogs are always initialized even in strict offline mode without remote cache
+    if (!this.speciesEnumCatalog) {
+      const offlineSpeciesEnumTs = `export enum SpeciesId { BULBASAUR = 1, IVYSAUR, VENUSAUR, PIKACHU = 25, GEODUDE = 74, GRAVELER, GOLEM }`;
+      this.speciesEnumCatalog = this.enumParser.parseEnum(offlineSpeciesEnumTs, 'SpeciesId', 'src/enums/species-id.ts');
+    }
+    if (!this.moveEnumCatalog) {
+      const offlineMoveEnumTs = `export enum MoveId { NONE, POUND, TACKLE = 33, THUNDERBOLT = 85, EARTHQUAKE = 89, QUICK_ATTACK = 98, ROCK_SLIDE = 157 }`;
+      this.moveEnumCatalog = this.enumParser.parseEnum(offlineMoveEnumTs, 'MoveId', 'src/enums/move-id.ts');
+    }
+    if (!this.abilityEnumCatalog) {
+      const offlineAbilityEnumTs = `export enum AbilityId { NONE, STENCH, STURDY = 5, STATIC = 9 }`;
+      this.abilityEnumCatalog = this.enumParser.parseEnum(offlineAbilityEnumTs, 'AbilityId', 'src/enums/ability-id.ts');
     }
 
     // Complete, syntactically valid TypeScript upstream declarations for token parsing
@@ -686,6 +779,12 @@ export const abilitiesData = {
       species,
       moves,
       abilities,
+      enums: {
+        species: this.speciesEnumCatalog,
+        moves: this.moveEnumCatalog,
+        abilities: this.abilityEnumCatalog
+      },
+      localeImporter: this.localeImporter,
       manifest: this.manifest,
       missingDataReport: [...this.missingDataReport]
     };

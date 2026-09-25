@@ -20,7 +20,20 @@ import { PokerogueRepository } from '../public/js/data/PokerogueRepository.js';
 import { PokerogueManifest } from '../public/js/data/PokerogueManifest.js';
 import { PokerogueImporter } from '../public/js/data/PokerogueImporter.js';
 import { PokemonSpriteResolver } from '../public/js/data/PokemonSpriteResolver.js';
+import { PokerogueEnumParser } from '../public/js/data/PokerogueEnumParser.js';
+import { PokerogueLocaleImporter } from '../public/js/data/PokerogueLocaleImporter.js';
+import { BattleCommand, SelectMoveCommand, ForfeitCommand } from '../public/js/battle/BattleCommand.js';
+import { BattleEventTypes } from '../public/js/battle/BattleEvents.js';
+import { ActionOrderPhase, DamagePhase, FaintCheckPhase } from '../public/js/battle/BattlePhases.js';
+import { BattleSession } from '../public/js/battle/BattleSession.js';
 import { getFallbackTestFixture } from './fixtures/fallbackVerticalSlice.js';
+import {
+  UPSTREAM_SPECIES_ENUM_FIXTURE,
+  UPSTREAM_MOVE_ENUM_FIXTURE,
+  UPSTREAM_ABILITY_ENUM_FIXTURE,
+  UPSTREAM_TYPE_ENUM_FIXTURE,
+  UPSTREAM_LOCALES_FIXTURE
+} from './fixtures/upstream_enums_fixture.js';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -597,6 +610,386 @@ test('PokerogueImporter dynamically parses arbitrary TypeScript source without m
   assert.strictEqual(bulba.eggMoves[0], 'petal_dance');
 });
 
+// -------------------------------------------------------------
+// 10. MILESTONE 11: ENUMS, LOCALES & I18N PIPELINE TESTS
+// -------------------------------------------------------------
+test('MILESTONE 11.1: PokerogueEnumParser parses explicit and sequential enum values with bidirectional mapping', () => {
+  const parser = new PokerogueEnumParser();
+  const speciesCatalog = parser.parseEnum(UPSTREAM_SPECIES_ENUM_FIXTURE, 'SpeciesId', 'src/enums/species-id.ts');
+  const moveCatalog = parser.parseEnum(UPSTREAM_MOVE_ENUM_FIXTURE, 'MoveId', 'src/enums/move-id.ts');
+  const abilityCatalog = parser.parseEnum(UPSTREAM_ABILITY_ENUM_FIXTURE, 'AbilityId', 'src/enums/ability-id.ts');
+  const typeCatalog = parser.parseEnum(UPSTREAM_TYPE_ENUM_FIXTURE, 'PokemonType', 'src/enums/pokemon-type.ts');
+
+  // SpeciesId checks (Explicit BULBASAUR=1, sequential IVYSAUR=2, explicit PIKACHU=25, explicit GOLEM after GRAVELER)
+  assert.strictEqual(speciesCatalog.getId('BULBASAUR'), 1);
+  assert.strictEqual(speciesCatalog.getSymbol(1), 'BULBASAUR');
+  assert.strictEqual(speciesCatalog.getId('IVYSAUR'), 2);
+  assert.strictEqual(speciesCatalog.getId('VENUSAUR'), 3);
+  assert.strictEqual(speciesCatalog.getId('PIKACHU'), 25);
+  assert.strictEqual(speciesCatalog.getSymbol(25), 'PIKACHU');
+  assert.strictEqual(speciesCatalog.getId('GEODUDE'), 74);
+  assert.strictEqual(speciesCatalog.getId('GRAVELER'), 75);
+  assert.strictEqual(speciesCatalog.getId('GOLEM'), 76);
+  assert.strictEqual(speciesCatalog.getSymbol(76), 'GOLEM');
+  assert.strictEqual(speciesCatalog.getId('ALOLA_RATTATA'), 2019);
+
+  // MoveId checks (NONE=0, POUND=1, TACKLE=33, THUNDERBOLT=85, EARTHQUAKE=89)
+  assert.strictEqual(moveCatalog.getId('NONE'), 0);
+  assert.strictEqual(moveCatalog.getId('POUND'), 1);
+  assert.strictEqual(moveCatalog.getId('TACKLE'), 33);
+  assert.strictEqual(moveCatalog.getId('BODY_SLAM'), 34);
+  assert.strictEqual(moveCatalog.getId('THUNDERBOLT'), 85);
+  assert.strictEqual(moveCatalog.getSymbol(85), 'THUNDERBOLT');
+  assert.strictEqual(moveCatalog.getId('EARTHQUAKE'), 89);
+
+  // AbilityId checks (NONE=0, STENCH=1, STURDY=5, STATIC=9)
+  assert.strictEqual(abilityCatalog.getId('NONE'), 0);
+  assert.strictEqual(abilityCatalog.getId('STENCH'), 1);
+  assert.strictEqual(abilityCatalog.getId('STURDY'), 5);
+  assert.strictEqual(abilityCatalog.getSymbol(5), 'STURDY');
+  assert.strictEqual(abilityCatalog.getId('STATIC'), 9);
+  assert.strictEqual(abilityCatalog.getSymbol(9), 'STATIC');
+
+  // PokemonType checks (UNKNOWN=-1, NORMAL=0, FIGHTING=1, ELECTRIC=13)
+  assert.strictEqual(typeCatalog.getId('UNKNOWN'), -1);
+  assert.strictEqual(typeCatalog.getId('NORMAL'), 0);
+  assert.strictEqual(typeCatalog.getId('FIGHTING'), 1);
+  assert.strictEqual(typeCatalog.getSymbol(-1), 'UNKNOWN');
+});
+
+test('MILESTONE 11.2: PokerogueLocaleImporter ingests EN and ES JSON packages preserving semantic structure', () => {
+  const importer = new PokerogueLocaleImporter();
+  const enMovePkg = importer.parseLocale(JSON.stringify(UPSTREAM_LOCALES_FIXTURE.en.move), 'en', 'move', 'en/move.json');
+  const esMovePkg = importer.parseLocale(JSON.stringify(UPSTREAM_LOCALES_FIXTURE.es.move), 'es-ES', 'move', 'es-ES/move.json');
+  const enAbPkg = importer.parseLocale(JSON.stringify(UPSTREAM_LOCALES_FIXTURE.en.ability), 'en', 'ability', 'en/ability.json');
+  const esAbPkg = importer.parseLocale(JSON.stringify(UPSTREAM_LOCALES_FIXTURE.es.ability), 'es-ES', 'ability', 'es-ES/ability.json');
+
+  assert.strictEqual(enMovePkg.get('thunderbolt').name, 'Thunderbolt');
+  assert.strictEqual(esMovePkg.get('thunderbolt').name, 'Rayo');
+  assert.strictEqual(importer.getText('move', 'thunderbolt', 'name', 'en'), 'Thunderbolt');
+  assert.strictEqual(importer.getText('move', 'thunderbolt', 'name', 'es'), 'Rayo');
+  assert.ok(importer.getText('move', 'thunderbolt', 'effect', 'es').includes('eléctrico'));
+
+  assert.strictEqual(importer.getText('ability', 'static', 'name', 'en'), 'Static');
+  assert.strictEqual(importer.getText('ability', 'static', 'name', 'es'), 'Electricidad Estática');
+  assert.strictEqual(importer.getText('ability', 'sturdy', 'name', 'es'), 'Robustez');
+});
+
+test('MILESTONE 11.3: DataManager registers enums, manages locales, and performs queries without direct upstream access', () => {
+  const enumParser = new PokerogueEnumParser();
+  const speciesCatalog = enumParser.parseEnum(UPSTREAM_SPECIES_ENUM_FIXTURE, 'SpeciesId', 'src/enums/species-id.ts');
+  const moveCatalog = enumParser.parseEnum(UPSTREAM_MOVE_ENUM_FIXTURE, 'MoveId', 'src/enums/move-id.ts');
+
+  dataManager.registerEnums('SpeciesId', speciesCatalog);
+  dataManager.registerEnums('MoveId', moveCatalog);
+
+  assert.strictEqual(dataManager.getEnumByName('SpeciesId', 'PIKACHU'), 25);
+  assert.strictEqual(dataManager.getEnumByName('SpeciesId', 'GOLEM'), 76);
+  assert.strictEqual(dataManager.getEnumById('SpeciesId', 25), 'PIKACHU');
+  assert.strictEqual(dataManager.getEnumById('SpeciesId', 76), 'GOLEM');
+  assert.strictEqual(dataManager.getEnumByName('MoveId', 'THUNDERBOLT'), 85);
+  assert.strictEqual(dataManager.getEnumById('MoveId', 85), 'THUNDERBOLT');
+
+  // Register locale package
+  const localeImporter = new PokerogueLocaleImporter();
+  const esMovePkg = localeImporter.parseLocale(JSON.stringify(UPSTREAM_LOCALES_FIXTURE.es.move), 'es-ES', 'move', 'es-ES/move.json');
+  dataManager.registerLocale(esMovePkg);
+
+  dataManager.setLocale('es-ES');
+  assert.strictEqual(dataManager.getLocale(), 'es-ES');
+  assert.strictEqual(dataManager.getLocalizedText('move', 'thunderbolt', 'name', 'es'), 'Rayo');
+});
+
+test('MILESTONE 11.4: Provenance and determinism across repeated enum and locale imports', () => {
+  const parser1 = new PokerogueEnumParser();
+  const parser2 = new PokerogueEnumParser();
+
+  const cat1 = parser1.parseEnum(UPSTREAM_SPECIES_ENUM_FIXTURE, 'SpeciesId', 'src/enums/species-id.ts');
+  const cat2 = parser2.parseEnum(UPSTREAM_SPECIES_ENUM_FIXTURE, 'SpeciesId', 'src/enums/species-id.ts');
+
+  // Check provenance tracking
+  assert.strictEqual(cat1.provenance.source, 'pokerogue');
+  assert.strictEqual(cat1.provenance.sourcePath, 'src/enums/species-id.ts');
+  assert.strictEqual(cat1.provenance.sourceRevision, '8555c08c823b856cbec4eb99ca84ea52a955836d');
+  assert.strictEqual(cat1.provenance.license, 'AGPL-v3.0-only');
+
+  // Exact hash matching (Reproducibility & Determinism)
+  assert.strictEqual(cat1.sourceHash, cat2.sourceHash);
+  assert.strictEqual(cat1.count, cat2.count);
+  assert.deepStrictEqual(cat1.entries(), cat2.entries());
+});
+
+test('MILESTONE 11.5: Idempotency of enum and locale registration (no duplicate records)', () => {
+  const enumParser = new PokerogueEnumParser();
+  const moveCatalog = enumParser.parseEnum(UPSTREAM_MOVE_ENUM_FIXTURE, 'MoveId', 'src/enums/move-id.ts');
+
+  const initialCount = moveCatalog.count;
+  // Re-insert existing entries
+  moveCatalog.set('THUNDERBOLT', 85);
+  moveCatalog.set('TACKLE', 33);
+  assert.strictEqual(moveCatalog.count, initialCount, 'Re-inserting entries must not increase count');
+
+  // DataManager re-registration
+  dataManager.registerEnums('MoveId', moveCatalog);
+  dataManager.registerEnums('MoveId', moveCatalog);
+  assert.strictEqual(dataManager.getEnum('MoveId').count, initialCount);
+});
+
+test('MILESTONE 11.6: Unknown value handling does not fail silently', () => {
+  assert.strictEqual(dataManager.getEnumByName('SpeciesId', 'NON_EXISTENT_POKEMON_XYZ'), null);
+  assert.strictEqual(dataManager.getEnumById('SpeciesId', 999999), null);
+  assert.strictEqual(dataManager.getLocalizedText('move', 'unknown_move_404', 'name', 'es'), null);
+});
+
+test('MILESTONE 11.7: Language switching EN -> ES -> EN is purely presentational and preserves BattleState and RNG determinism', () => {
+  const pSpecies = dataManager.getSpecies('pikachu');
+  const eSpecies = dataManager.getSpecies('golem');
+  assert.ok(pSpecies && eSpecies);
+
+  const pBattler = new PokemonBattleData(pSpecies, 20);
+  const eBattler = new PokemonBattleData(eSpecies, 20);
+
+  const seed = 12345;
+  const state = new BattleState(pBattler, eBattler, seed);
+  const engine = new BattleEngine(state);
+
+  // Snapshot before turn
+  const initialPlayerHp = state.player.active.currentHp;
+  const initialEnemyHp = state.enemy.active.currentHp;
+
+  // Run a turn in EN
+  dataManager.setLocale('en');
+  engine.runFullTurn('quick_attack');
+  const hpAfterTurn1 = state.enemy.active.currentHp;
+  const rngStateAfterTurn1 = state.rngState;
+
+  // Switch language to ES
+  dataManager.setLocale('es-ES');
+  assert.strictEqual(dataManager.getLocale(), 'es-ES');
+
+  // Verify BattleState and RNG are completely unaffected by locale changes
+  assert.strictEqual(state.enemy.active.currentHp, hpAfterTurn1, 'Switching locale must not alter enemy HP');
+  assert.strictEqual(state.rngState, rngStateAfterTurn1, 'Switching locale must not alter RNG state');
+
+  // Switch back to EN
+  dataManager.setLocale('en');
+  assert.strictEqual(state.enemy.active.currentHp, hpAfterTurn1, 'Switching locale back to EN must preserve battle state');
+  assert.strictEqual(state.rngState, rngStateAfterTurn1, 'Switching locale back to EN must preserve RNG state');
+});
+
+// -------------------------------------------------------------
+// 11. MILESTONE 12: BATTLE DOMAIN ARCHITECTURE TESTS
+// -------------------------------------------------------------
+test('MILESTONE 12.1: BattleCommand validation rejects invalid commands without mutating state', () => {
+  const pSpecies = dataManager.getSpecies('pikachu');
+  const eSpecies = dataManager.getSpecies('golem');
+  const pBattler = new PokemonBattleData(pSpecies, 20);
+  const eBattler = new PokemonBattleData(eSpecies, 20);
+  const state = new BattleState(pBattler, eBattler, 7777);
+
+  // Valid command
+  const activeMove = pBattler.moves[0];
+  const validCmd = new SelectMoveCommand('player', activeMove.id);
+  const validRes = validCmd.validate(state);
+  assert.strictEqual(validRes.valid, true);
+
+  // Invalid command: non-existent move
+  const invalidMoveCmd = new SelectMoveCommand('player', 'non_existent_super_laser');
+  const invalidMoveRes = invalidMoveCmd.validate(state);
+  assert.strictEqual(invalidMoveRes.valid, false);
+  assert.ok(invalidMoveRes.reason.includes('not in'));
+
+  // Invalid command: fainted actor
+  pBattler.fainted = true;
+  pBattler.currentHp = 0;
+  const faintedActorRes = validCmd.validate(state);
+  assert.strictEqual(faintedActorRes.valid, false);
+  assert.ok(faintedActorRes.reason.includes('fainted'));
+
+  // Invalid command: battle already finished
+  pBattler.fainted = false;
+  pBattler.currentHp = pBattler.maxHp;
+  state.phase = 'BattleFinished';
+  state.winner = 'player';
+  const finishedBattleRes = validCmd.validate(state);
+  assert.strictEqual(finishedBattleRes.valid, false);
+  assert.ok(finishedBattleRes.reason.includes('concluded'));
+
+  // Serializability check
+  const jsonStr = JSON.stringify(validCmd.toJSON());
+  const deserialized = BattleCommand.fromJSON(jsonStr);
+  assert.strictEqual(deserialized.type, 'SELECT_MOVE');
+  assert.strictEqual(deserialized.actorId, 'player');
+  assert.strictEqual(deserialized.moveId, activeMove.id);
+});
+
+test('MILESTONE 12.2: Phase pipeline executes modularly and preserves Gen 9 math & ability triggers', () => {
+  const pSpecies = dataManager.getSpecies('pikachu');
+  const eSpecies = dataManager.getSpecies('golem');
+  const pBattler = new PokemonBattleData(pSpecies, 20);
+  const eBattler = new PokemonBattleData(eSpecies, 20);
+  const state = new BattleState(pBattler, eBattler, 8888);
+
+  const pMove = pBattler.moves[0];
+  const eMove = eBattler.moves[0];
+
+  // 1. ActionOrderPhase
+  const { firstAction, secondAction, playerFirst } = ActionOrderPhase.resolve(state, pMove, eMove);
+  assert.ok(firstAction && secondAction);
+  // Pikachu has higher base speed than Golem at Lv 20
+  assert.strictEqual(playerFirst, true, 'Pikachu should move first due to speed advantage');
+
+  // 2. DamagePhase Gen 9 calculation
+  const breakdown = DamagePhase.calculateDamage(state, pBattler, eBattler, pMove);
+  assert.ok(breakdown.finalDamage > 0);
+  assert.strictEqual(breakdown.attacker, pBattler.nickname);
+  assert.strictEqual(breakdown.defender, eBattler.nickname);
+  assert.strictEqual(breakdown.stab, 1.0); // Tackle is Normal, Pikachu is Electric
+
+  // 3. FaintCheckPhase
+  const faintCheckBefore = FaintCheckPhase.resolve({ emit: () => {}, state }, eBattler, false);
+  assert.strictEqual(faintCheckBefore.fainted, false);
+  assert.strictEqual(faintCheckBefore.winner, null);
+
+  eBattler.currentHp = 0;
+  let eventEmitted = null;
+  const mockEngine = {
+    state,
+    emit: (ev, p) => { eventEmitted = { ev, p }; }
+  };
+  const faintCheckAfter = FaintCheckPhase.resolve(mockEngine, eBattler, false);
+  assert.strictEqual(faintCheckAfter.fainted, true);
+  assert.strictEqual(faintCheckAfter.winner, 'player');
+  assert.strictEqual(state.winner, 'player');
+});
+
+test('MILESTONE 12.3: BattleEngine produces typed serializable events in strict deterministic order', () => {
+  const pSpecies = dataManager.getSpecies('pikachu');
+  const eSpecies = dataManager.getSpecies('golem');
+  const pBattler = new PokemonBattleData(pSpecies, 20);
+  const eBattler = new PokemonBattleData(eSpecies, 20);
+  const state = new BattleState(pBattler, eBattler, 5555);
+  const engine = new BattleEngine(state);
+
+  const recordedEvents = [];
+  engine.on('TurnStarted', (e) => recordedEvents.push(e.type));
+  engine.on('MoveSelected', (e) => recordedEvents.push(e.type));
+  engine.on('MoveStarted', (e) => recordedEvents.push(e.type));
+  engine.on('MoveHit', (e) => recordedEvents.push(e.type));
+  engine.on('DamageCalculated', (e) => recordedEvents.push(e.type));
+  engine.on('DamageApplied', (e) => recordedEvents.push(e.type));
+  engine.on('HPChanged', (e) => recordedEvents.push(e.type));
+  engine.on('TurnEnded', (e) => recordedEvents.push(e.type));
+
+  const cmd = new SelectMoveCommand('player', 'quick_attack');
+  const res = engine.executeCommand(cmd);
+  assert.strictEqual(res.success, true);
+
+  // Check event order: MoveSelected -> TurnStarted -> MoveStarted -> MoveHit -> DamageCalculated -> DamageApplied -> HPChanged -> TurnEnded
+  assert.ok(recordedEvents.indexOf('MoveSelected') < recordedEvents.indexOf('TurnStarted'));
+  assert.ok(recordedEvents.indexOf('TurnStarted') < recordedEvents.indexOf('MoveStarted'));
+  assert.ok(recordedEvents.indexOf('MoveStarted') < recordedEvents.indexOf('MoveHit'));
+  assert.ok(recordedEvents.indexOf('MoveHit') < recordedEvents.indexOf('DamageCalculated'));
+  assert.ok(recordedEvents.indexOf('DamageCalculated') < recordedEvents.indexOf('DamageApplied'));
+  assert.ok(recordedEvents.indexOf('DamageApplied') < recordedEvents.indexOf('HPChanged'));
+  assert.ok(recordedEvents.indexOf('HPChanged') < recordedEvents.indexOf('TurnEnded'));
+
+  // Ensure all events in eventLog are JSON-serializable without circular references or DOM
+  const serializedLog = JSON.stringify(state.eventLog);
+  assert.ok(serializedLog.length > 50);
+  const parsedLog = JSON.parse(serializedLog);
+  assert.strictEqual(parsedLog.length, state.eventLog.length);
+});
+
+test('MILESTONE 12.4: Deterministic turn replay produces 100% identical state and RNG progression', () => {
+  const runSimulation = (seed) => {
+    const pSpecies = dataManager.getSpecies('pikachu');
+    const eSpecies = dataManager.getSpecies('golem');
+    const pBattler = new PokemonBattleData(pSpecies, 20);
+    const eBattler = new PokemonBattleData(eSpecies, 20);
+    const state = new BattleState(pBattler, eBattler, seed);
+    const engine = new BattleEngine(state);
+
+    engine.executeCommand(new SelectMoveCommand('player', 'quick_attack'));
+    engine.executeCommand(new SelectMoveCommand('player', 'tackle'));
+
+    return {
+      turn: state.turn,
+      playerHp: state.player.active.currentHp,
+      enemyHp: state.enemy.active.currentHp,
+      rngState: state.rngState,
+      eventTypes: state.eventLog.map(e => e.type),
+      damageBreakdown: state.damageBreakdown
+    };
+  };
+
+  const simA = runSimulation(4242);
+  const simB = runSimulation(4242);
+
+  assert.strictEqual(simA.turn, simB.turn);
+  assert.strictEqual(simA.playerHp, simB.playerHp);
+  assert.strictEqual(simA.enemyHp, simB.enemyHp);
+  assert.strictEqual(simA.rngState, simB.rngState);
+  assert.deepStrictEqual(simA.eventTypes, simB.eventTypes);
+  assert.deepStrictEqual(simA.damageBreakdown, simB.damageBreakdown);
+});
+
+test('MILESTONE 12.5: BattleSession manages lifecycle, dispatching, and match restart', () => {
+  const session = new BattleSession({
+    playerSpeciesId: 'pikachu',
+    enemySpeciesId: 'golem',
+    playerLevel: 20,
+    enemyLevel: 20,
+    seed: 31415
+  });
+
+  assert.strictEqual(session.isConcluded(), false);
+  assert.strictEqual(session.getWinner(), null);
+
+  // Dispatch valid move
+  const firstMoveId = session.state.player.active.moves[0].id;
+  const result = session.selectMove(firstMoveId);
+  assert.strictEqual(result.success, true);
+  assert.strictEqual(session.commandLog.length, 1);
+  assert.strictEqual(session.commandLog[0].type, 'SELECT_MOVE');
+
+  // Dispatch forfeit
+  const forfeitRes = session.forfeit();
+  assert.strictEqual(forfeitRes.success, true);
+  assert.strictEqual(session.isConcluded(), true);
+  assert.strictEqual(session.getWinner(), 'enemy');
+
+  // Restart match
+  session.restart();
+  assert.strictEqual(session.isConcluded(), false);
+  assert.strictEqual(session.getWinner(), null);
+  assert.strictEqual(session.state.turn, 1);
+  assert.strictEqual(session.commandLog.length, 0);
+});
+
+test('MILESTONE 12.6: Offline canonical enum fallback ensures 100% resolved IDs without remote connection', async () => {
+  // Test importVerticalSlice with null repository (offline simulation)
+  const offlineImporter = new PokerogueImporter(null);
+  const result = await offlineImporter.importVerticalSlice(null);
+
+  assert.strictEqual(result.species.length, 2);
+  const pika = result.species.find(s => s.id === 'pikachu');
+  const golem = result.species.find(s => s.id === 'golem');
+
+  // Verify IDs are properly resolved, not 0
+  assert.strictEqual(pika.speciesId, 25);
+  assert.strictEqual(golem.speciesId, 76);
+
+  assert.ok(result.moves.length >= 2);
+  const tb = result.moves.find(m => m.id === 'thunderbolt');
+  const tk = result.moves.find(m => m.id === 'tackle');
+  assert.strictEqual(tb.moveId, 85);
+  assert.strictEqual(tk.moveId, 33);
+
+  const st = result.abilities.find(a => a.id === 'static');
+  assert.ok(st);
+});
+
 async function runAllTests() {
   for (const { name, fn } of testQueue) {
     total++;
@@ -607,6 +1000,7 @@ async function runAllTests() {
     } catch (err) {
       console.error(`  ✕ ${name}`);
       console.error(`     Error: ${err.message}`);
+      console.error(err.stack);
     }
   }
 

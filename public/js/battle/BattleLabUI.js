@@ -2,10 +2,12 @@
  * BattleLabUI.js
  * Interactive Battle Simulation & Debugging Studio for PokéRogue 3DS.
  * Renders battler status cards, move selectors, phase debugger, damage breakdown, and event log.
+ * Supports dynamic locale switching (EN / ES) purely for presentation without affecting battle state or RNG.
  */
 
 import { PokemonBattleData, BattleState } from './BattleState.js';
 import { BattleEngine } from './BattleEngine.js';
+import { SelectMoveCommand } from './BattleCommand.js';
 import { dataManager } from '../data/DataManager.js';
 import { PokemonSpriteResolver } from '../data/PokemonSpriteResolver.js';
 
@@ -50,6 +52,7 @@ export class BattleLabUI {
   render() {
     if (!this.container || !this.state) return;
 
+    const currentLocale = dataManager.getLocale();
     const p = this.state.player.active;
     const e = this.state.enemy.active;
 
@@ -64,6 +67,22 @@ export class BattleLabUI {
 
     const getHpColor = (percent) => percent > 50 ? '#48bb78' : percent > 20 ? '#ecc94b' : '#f56565';
 
+    // Localized helper lookups
+    const getLocalizedMoveName = (move) => {
+      const def = dataManager.getMove(move.id);
+      return def ? def.getName(currentLocale) : (move.name || move.id);
+    };
+
+    const getLocalizedAbilityName = (pokemon) => {
+      const def = dataManager.getAbility(pokemon.ability);
+      return def ? def.getName(currentLocale) : (pokemon.ability || 'None');
+    };
+
+    const getLocalizedSpeciesName = (pokemon) => {
+      const def = dataManager.getSpecies(pokemon.species.id);
+      return def ? def.getName(currentLocale) : (pokemon.nickname || pokemon.species.name);
+    };
+
     this.container.innerHTML = `
       <div class="battle-lab-root">
         <!-- Battle Lab Header -->
@@ -75,14 +94,21 @@ export class BattleLabUI {
           <div class="battler-select-toolbar" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             <label style="font-size:11px; font-weight:bold; color:#a0aec0;">Player:</label>
             <select id="select-player-battler" class="battler-select" style="background:#2d3748; color:#fff; border:1px solid #4a5568; border-radius:4px; padding:3px 6px; font-size:12px; cursor:pointer;">
-              ${allSpecies.map(s => `<option value="${s.id}" ${s.id === this.playerSpeciesId ? 'selected' : ''}>${s.name} (#${s.speciesId})</option>`).join('')}
+              ${allSpecies.map(s => `<option value="${s.id}" ${s.id === this.playerSpeciesId ? 'selected' : ''}>${s.getName(currentLocale)} (#${s.speciesId})</option>`).join('')}
             </select>
             <span style="color:#718096; font-size:11px; font-weight:bold;">VS</span>
             <label style="font-size:11px; font-weight:bold; color:#a0aec0;">Enemy:</label>
             <select id="select-enemy-battler" class="battler-select" style="background:#2d3748; color:#fff; border:1px solid #4a5568; border-radius:4px; padding:3px 6px; font-size:12px; cursor:pointer;">
-              ${allSpecies.map(s => `<option value="${s.id}" ${s.id === this.enemySpeciesId ? 'selected' : ''}>${s.name} (#${s.speciesId})</option>`).join('')}
+              ${allSpecies.map(s => `<option value="${s.id}" ${s.id === this.enemySpeciesId ? 'selected' : ''}>${s.getName(currentLocale)} (#${s.speciesId})</option>`).join('')}
             </select>
             <button id="btn-apply-matchup" style="background:#3182ce; color:#fff; border:none; border-radius:4px; padding:3px 8px; font-size:11px; font-weight:bold; cursor:pointer;">Set Matchup</button>
+
+            <!-- Language Switcher Toolbar (Pure presentation) -->
+            <div class="locale-switcher" style="margin-left:auto; display:flex; align-items:center; gap:4px; background:#1a202c; padding:2px 6px; border-radius:4px; border:1px solid #4a5568;">
+              <span style="font-size:10px; font-weight:bold; color:#a0aec0;">🌐 LANG:</span>
+              <button id="btn-lang-en" class="btn-lang ${currentLocale === 'en' ? 'active' : ''}" style="background:${currentLocale === 'en' ? '#4299e1' : 'transparent'}; color:#fff; border:none; border-radius:3px; padding:2px 5px; font-size:10px; cursor:pointer; font-weight:bold;">EN</button>
+              <button id="btn-lang-es" class="btn-lang ${currentLocale.startsWith('es') ? 'active' : ''}" style="background:${currentLocale.startsWith('es') ? '#4299e1' : 'transparent'}; color:#fff; border:none; border-radius:3px; padding:2px 5px; font-size:10px; cursor:pointer; font-weight:bold;">ES</button>
+            </div>
           </div>
           <div class="battle-lab-meta">
             <span class="tag">Wave ${this.state.wave}</span>
@@ -98,7 +124,7 @@ export class BattleLabUI {
           <div class="battler-card player-card ${p.fainted ? 'fainted' : ''}">
             <div class="battler-header">
               <div class="battler-info">
-                <h3>${p.nickname} <span class="battler-lvl">Lv.${p.level}</span></h3>
+                <h3>${getLocalizedSpeciesName(p)} <span class="battler-lvl">Lv.${p.level}</span></h3>
                 <div class="type-tags">
                   ${p.types.map(t => `<span class="type-badge type-${t.toLowerCase()}">${t}</span>`).join('')}
                   ${p.status ? `<span class="status-badge">${p.status.toUpperCase()}</span>` : ''}
@@ -126,7 +152,7 @@ export class BattleLabUI {
               <span>DEF ${p.getEffectiveStat('def')}</span>
               <span>SPA ${p.getEffectiveStat('spatk')}</span>
               <span>SPD ${p.getEffectiveStat('spd')}</span>
-              <span>Ability: <b>${p.ability}</b></span>
+              <span>Ability: <b>${getLocalizedAbilityName(p)}</b></span>
             </div>
           </div>
 
@@ -134,7 +160,7 @@ export class BattleLabUI {
           <div class="battler-card enemy-card ${e.fainted ? 'fainted' : ''}">
             <div class="battler-header">
               <div class="battler-info">
-                <h3>${e.nickname} <span class="battler-lvl">Lv.${e.level}</span></h3>
+                <h3>${getLocalizedSpeciesName(e)} <span class="battler-lvl">Lv.${e.level}</span></h3>
                 <div class="type-tags">
                   ${e.types.map(t => `<span class="type-badge type-${t.toLowerCase()}">${t}</span>`).join('')}
                   ${e.status ? `<span class="status-badge">${e.status.toUpperCase()}</span>` : ''}
@@ -162,19 +188,19 @@ export class BattleLabUI {
               <span>DEF ${e.getEffectiveStat('def')}</span>
               <span>SPA ${e.getEffectiveStat('spatk')}</span>
               <span>SPD ${e.getEffectiveStat('spd')}</span>
-              <span>Ability: <b>${e.ability}</b></span>
+              <span>Ability: <b>${getLocalizedAbilityName(e)}</b></span>
             </div>
           </div>
         </div>
 
         <!-- Command & Moves Section -->
         <div class="battle-commands-panel">
-          <div class="section-title">COMMAND PHASE — SELECT PLAYER MOVE</div>
+          <div class="section-title">COMMAND PHASE — ${currentLocale.startsWith('es') ? 'SELECCIONA MOVIMIENTO' : 'SELECT PLAYER MOVE'}</div>
           <div class="moves-grid">
             ${p.moves.map(m => `
               <button class="move-button" data-move-id="${m.id}" ${p.fainted || e.fainted ? 'disabled' : ''}>
                 <div class="move-btn-top">
-                  <span class="move-name">${m.name}</span>
+                  <span class="move-name">${getLocalizedMoveName(m)}</span>
                   <span class="move-pp">PP ${m.pp}/${m.maxPp}</span>
                 </div>
                 <div class="move-btn-bottom">
@@ -223,7 +249,7 @@ export class BattleLabUI {
               ${this.state.eventLog.slice(-12).reverse().map(ev => `
                 <div class="event-log-item">
                   <span class="event-badge">${ev.type}</span>
-                  <span class="event-desc">${this._formatEvent(ev)}</span>
+                  <span class="event-desc">${this._formatEvent(ev, currentLocale)}</span>
                 </div>
               `).join('')}
               ${this.state.eventLog.length === 0 ? '<div class="debugger-empty">Ready for simulation.</div>' : ''}
@@ -236,29 +262,73 @@ export class BattleLabUI {
     this._bindEvents();
   }
 
-  _formatEvent(ev) {
+  _formatEvent(ev, locale = 'en') {
+    const isEs = locale.startsWith('es');
     switch (ev.type) {
-      case 'TurnStarted': return `Turn ${ev.turn} started.`;
-      case 'MoveStarted': return `${ev.user} used ${ev.move}!`;
-      case 'MoveMissed': return `${ev.user}'s ${ev.move} missed!`;
-      case 'MoveHit': return `${ev.move} connected with ${ev.target}!`;
-      case 'DamageApplied': return `${ev.target} took ${ev.damage} damage! (Remaining: ${ev.currentHp}/${ev.maxHp})`;
-      case 'AbilityTriggered': return `[${ev.ability}] ${ev.effect}`;
-      case 'StatusApplied': return `${ev.pokemon} was inflicted with ${ev.status}!`;
-      case 'StatusPreventedMove': return `${ev.user} is paralyzed! It can't move!`;
-      case 'PokemonFainted': return `${ev.pokemon} fainted!`;
-      case 'TurnEnded': return `Turn ${ev.turn - 1} finished.`;
-      case 'TurnRewound': return `Rewound to Turn ${ev.turn}.`;
-      default: return JSON.stringify(ev);
+      case 'TurnStarted':
+        return isEs ? `Turno ${ev.turn} iniciado.` : `Turn ${ev.turn} started.`;
+      case 'MoveStarted': {
+        const moveDef = dataManager.getMove(ev.move);
+        const moveName = moveDef ? moveDef.getName(locale) : ev.move;
+        return isEs ? `¡${ev.user} usó ${moveName}!` : `${ev.user} used ${moveName}!`;
+      }
+      case 'MoveMissed': {
+        const moveDef = dataManager.getMove(ev.move);
+        const moveName = moveDef ? moveDef.getName(locale) : ev.move;
+        return isEs ? `¡El ${moveName} de ${ev.user} falló!` : `${ev.user}'s ${moveName} missed!`;
+      }
+      case 'MoveHit': {
+        const moveDef = dataManager.getMove(ev.move);
+        const moveName = moveDef ? moveDef.getName(locale) : ev.move;
+        return isEs ? `¡${moveName} alcanzó a ${ev.target}!` : `${moveName} connected with ${ev.target}!`;
+      }
+      case 'DamageApplied':
+        return isEs ? `¡${ev.target} recibió ${ev.damage} de daño! (Restante: ${ev.currentHp}/${ev.maxHp})` : `${ev.target} took ${ev.damage} damage! (Remaining: ${ev.currentHp}/${ev.maxHp})`;
+      case 'AbilityTriggered': {
+        const abDef = dataManager.getAbility(ev.ability);
+        const abName = abDef ? abDef.getName(locale) : ev.ability;
+        return `[${abName}] ${ev.effect}`;
+      }
+      case 'StatusApplied':
+        return isEs ? `¡${ev.pokemon} fue afectado por ${ev.status}!` : `${ev.pokemon} was inflicted with ${ev.status}!`;
+      case 'StatusPreventedMove':
+        return isEs ? `¡${ev.user} está paralizado! ¡No se puede mover!` : `${ev.user} is paralyzed! It can't move!`;
+      case 'PokemonFainted':
+        return isEs ? `¡${ev.pokemon} se debilitó!` : `${ev.pokemon} fainted!`;
+      case 'TurnEnded':
+        return isEs ? `Turno ${ev.turn - 1} finalizado.` : `Turn ${ev.turn - 1} finished.`;
+      case 'TurnRewound':
+        return isEs ? `Rebobinado al Turno ${ev.turn}.` : `Rewound to Turn ${ev.turn}.`;
+      default:
+        return JSON.stringify(ev);
     }
   }
 
   _bindEvents() {
+    // Language Switcher Buttons (Purely alters presentation without altering BattleState or RNG)
+    const btnEn = this.container.querySelector('#btn-lang-en');
+    const btnEs = this.container.querySelector('#btn-lang-es');
+
+    if (btnEn) {
+      btnEn.addEventListener('click', () => {
+        dataManager.setLocale('en');
+        this.render();
+      });
+    }
+
+    if (btnEs) {
+      btnEs.addEventListener('click', () => {
+        dataManager.setLocale('es-ES');
+        this.render();
+      });
+    }
+
     // Move Buttons
     this.container.querySelectorAll('.move-button').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const moveId = e.currentTarget.dataset.moveId;
-        this.engine.runFullTurn(moveId);
+        const cmd = new SelectMoveCommand('player', moveId);
+        this.engine.executeCommand(cmd);
         this.render();
       });
     });
@@ -268,7 +338,6 @@ export class BattleLabUI {
     if (stepBtn) {
       stepBtn.addEventListener('click', () => {
         if (this.engine.phaseQueue.length === 0) {
-          // If queue empty, queue turn with default move
           this.engine.queueTurn(this.state.player.active.moves[0].id);
         }
         this.engine.step();

@@ -27,6 +27,11 @@ export class SpeciesDefinition {
     this.speciesId = Number(data.speciesId || data.nationalDexId || 0);
     this.nationalDexId = this.speciesId;
     this.name = data.name || this.id;
+    this.names = {
+      en: data.names?.en || data.name || this.id,
+      es: data.names?.es || data.names?.['es-ES'] || data.name || this.id,
+      ...data.names
+    };
     this.generation = Number(data.generation || 1);
     this.type1 = toTitleCase(data.type1 || (data.types && data.types[0]) || 'Normal');
     this.type2 = data.type2 && data.type2.toUpperCase() !== 'NONE' ? toTitleCase(data.type2) : ((data.types && data.types[1]) ? toTitleCase(data.types[1]) : 'NONE');
@@ -36,7 +41,6 @@ export class SpeciesDefinition {
     }
     this.baseStats = {
       hp: Number(data.baseStats?.hp ?? 40),
-
       atk: Number(data.baseStats?.atk ?? 40),
       def: Number(data.baseStats?.def ?? 40),
       spatk: Number(data.baseStats?.spatk ?? 40),
@@ -91,6 +95,11 @@ export class SpeciesDefinition {
     this.metadata = this.source;
     this.schemaVersion = 1;
   }
+
+  getName(locale = 'en') {
+    const loc = String(locale).toLowerCase().startsWith('es') ? 'es' : 'en';
+    return this.names?.[loc] || this.name;
+  }
 }
 
 export class MoveDefinition {
@@ -98,6 +107,17 @@ export class MoveDefinition {
     this.id = data.id || 'unknown';
     this.moveId = Number(data.moveId || 0);
     this.name = data.name || this.id;
+    this.names = {
+      en: data.names?.en || data.name || this.id,
+      es: data.names?.es || data.names?.['es-ES'] || data.name || this.id,
+      ...data.names
+    };
+    this.description = data.description || '';
+    this.descriptions = {
+      en: data.descriptions?.en || data.description || '',
+      es: data.descriptions?.es || data.descriptions?.['es-ES'] || data.description || '',
+      ...data.descriptions
+    };
     this.type = (data.type || 'NORMAL').toUpperCase();
     this.category = data.category || 'Physical';
     this.power = Number(data.power ?? 0);
@@ -106,7 +126,6 @@ export class MoveDefinition {
     this.maxPp = Number(data.maxPp ?? Math.floor(this.pp * 1.6));
     this.priority = Number(data.priority ?? 0);
     this.target = data.target || 'Selected';
-    this.description = data.description || '';
     this.flags = {
       contact: Boolean(data.flags?.contact),
       protectable: Boolean(data.flags?.protectable ?? true),
@@ -118,13 +137,33 @@ export class MoveDefinition {
     this.metadata = this.source;
     this.schemaVersion = 1;
   }
+
+  getName(locale = 'en') {
+    const loc = String(locale).toLowerCase().startsWith('es') ? 'es' : 'en';
+    return this.names?.[loc] || this.name;
+  }
+
+  getDescription(locale = 'en') {
+    const loc = String(locale).toLowerCase().startsWith('es') ? 'es' : 'en';
+    return this.descriptions?.[loc] || this.description;
+  }
 }
 
 export class AbilityDefinition {
   constructor(data = {}) {
     this.id = data.id || 'unknown';
     this.name = data.name || this.id;
+    this.names = {
+      en: data.names?.en || data.name || this.id,
+      es: data.names?.es || data.names?.['es-ES'] || data.name || this.id,
+      ...data.names
+    };
     this.description = data.description || '';
+    this.descriptions = {
+      en: data.descriptions?.en || data.description || '',
+      es: data.descriptions?.es || data.descriptions?.['es-ES'] || data.description || '',
+      ...data.descriptions
+    };
     this.trigger = data.trigger || 'PASSIVE';
     this.attributes = Array.isArray(data.attributes) ? [...data.attributes] : [];
     this.conditions = Array.isArray(data.conditions) ? [...data.conditions] : [];
@@ -133,18 +172,43 @@ export class AbilityDefinition {
     this.metadata = this.source;
     this.schemaVersion = 1;
   }
+
+  getName(locale = 'en') {
+    const loc = String(locale).toLowerCase().startsWith('es') ? 'es' : 'en';
+    return this.names?.[loc] || this.name;
+  }
+
+  getDescription(locale = 'en') {
+    const loc = String(locale).toLowerCase().startsWith('es') ? 'es' : 'en';
+    return this.descriptions?.[loc] || this.description;
+  }
 }
 
 export class ItemDefinition {
   constructor(data = {}) {
     this.id = data.id || 'unknown';
     this.name = data.name || this.id;
+    this.names = {
+      en: data.names?.en || data.name || this.id,
+      es: data.names?.es || data.names?.['es-ES'] || data.name || this.id,
+      ...data.names
+    };
     this.category = data.category || 'GENERAL';
     this.tier = data.tier || 'COMMON';
     this.price = Number(data.price ?? 100);
     this.description = data.description || '';
+    this.descriptions = {
+      en: data.descriptions?.en || data.description || '',
+      es: data.descriptions?.es || data.descriptions?.['es-ES'] || data.description || '',
+      ...data.descriptions
+    };
     this.source = new SourceMetadata(data.metadata || data.source);
     this.metadata = this.source;
     this.schemaVersion = 1;
+  }
+
+  getName(locale = 'en') {
+    const loc = String(locale).toLowerCase().startsWith('es') ? 'es' : 'en';
+    return this.names?.[loc] || this.name;
   }
 }

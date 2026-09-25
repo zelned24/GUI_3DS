@@ -1,8 +1,9 @@
 import { PokerogueAdapter } from './PokerogueAdapter.js';
+import { PokerogueLocaleImporter } from './PokerogueLocaleImporter.js';
 
 /**
  * DataManager - Central database and query engine for all game content
- * (Species, Moves, Abilities, Items, Type Chart, Dependency Graphs).
+ * (Species, Moves, Abilities, Items, Type Chart, Enums, Locales, Dependency Graphs).
  */
 export class DataManager {
   constructor() {
@@ -11,6 +12,9 @@ export class DataManager {
     this.moves = new Map();   // id -> MoveDefinition
     this.abilities = new Map(); // id -> AbilityDefinition
     this.items = new Map();   // id -> ItemDefinition
+    this.enums = new Map();   // enumName -> PokerogueEnumCatalog
+    this.locales = new Map(); // `${locale}:${namespace}` -> PokerogueLocalePackage
+    this.currentLocale = 'en';
     this.listeners = [];
 
     // Official Gen 9 Pokémon Type Chart
@@ -35,6 +39,161 @@ export class DataManager {
     species.forEach(s => this.species.set(s.id, s));
     moves.forEach(m => this.moves.set(m.id, m));
     abilities.forEach(a => this.abilities.set(a.id, a));
+  }
+
+  /**
+   * Registers a parsed enum catalog into the data registry.
+   * @param {string} enumName e.g. 'SpeciesId', 'MoveId', 'AbilityId', 'PokemonType'
+   * @param {import('./PokerogueEnumParser.js').PokerogueEnumCatalog} catalog 
+   */
+  registerEnums(enumName, catalog) {
+    if (!enumName || !catalog) {
+      throw new Error('Valid enumName and PokerogueEnumCatalog required for registerEnums');
+    }
+    this.enums.set(enumName, catalog);
+    this._notify('enumsRegistered', { enumName, count: catalog.count });
+  }
+
+  /**
+   * Retrieves an enum catalog by name.
+   */
+  getEnum(enumName) {
+    return this.enums.get(enumName) || null;
+  }
+
+  /**
+   * Resolves a symbol to its numeric ID across registered enums.
+   * @param {string} enumName e.g. 'SpeciesId'
+   * @param {string} symbol e.g. 'PIKACHU'
+   * @returns {number|null}
+   */
+  getEnumByName(enumName, symbol) {
+    const catalog = this.getEnum(enumName);
+    if (!catalog) return null;
+    const id = catalog.getId(symbol);
+    return id !== undefined ? id : null;
+  }
+
+  /**
+   * Resolves a numeric ID to its symbol name across registered enums.
+   * @param {string} enumName e.g. 'SpeciesId'
+   * @param {number} id e.g. 25
+   * @returns {string|null}
+   */
+  getEnumById(enumName, id) {
+    const catalog = this.getEnum(enumName);
+    if (!catalog) return null;
+    return catalog.getSymbol(id) || null;
+  }
+
+  /**
+   * Registers a parsed locale package into the data registry.
+   * @param {import('./PokerogueLocaleImporter.js').PokerogueLocalePackage} localePackage 
+   */
+  registerLocale(localePackage) {
+    if (!localePackage) {
+      throw new Error('Valid PokerogueLocalePackage required for registerLocale');
+    }
+    const normLocale = PokerogueLocaleImporter.normalizeLocaleCode(localePackage.localeCode);
+    const key = `${normLocale}:${localePackage.namespace}`;
+    this.locales.set(key, localePackage);
+
+    // Apply localization updates to existing canonical models in-memory
+    this._applyLocaleToEntities(normLocale, localePackage.namespace, localePackage);
+
+    this._notify('localeRegistered', {
+      locale: normLocale,
+      namespace: localePackage.namespace,
+      count: localePackage.size()
+    });
+  }
+
+  /**
+   * Sets current active UI display language.
+   * @param {'en'|'es'|'es-ES'} localeCode 
+   */
+  setLocale(localeCode) {
+    const norm = PokerogueLocaleImporter.normalizeLocaleCode(localeCode);
+    if (this.currentLocale !== norm) {
+      this.currentLocale = norm;
+      this._notify('localeChanged', { locale: norm });
+    }
+  }
+
+  getLocale() {
+    return this.currentLocale;
+  }
+
+  /**
+   * Retrieves localized text from registered locale packages.
+   * @param {string} namespace 'move' | 'ability' | 'pokemon' | 'battle'
+   * @param {string} id Entity key e.g. 'thunderbolt', 'static'
+   * @param {string} [field='name']
+   * @param {string} [locale=this.currentLocale]
+   * @returns {string|null}
+   */
+  getLocalizedText(namespace, id, field = 'name', locale = this.currentLocale) {
+    const normLocale = PokerogueLocaleImporter.normalizeLocaleCode(locale);
+    const key = `${normLocale}:${namespace}`;
+    const pkg = this.locales.get(key);
+    if (!pkg) {
+      // Fallback to 'en' if requested locale is missing
+      const enPkg = this.locales.get(`en:${namespace}`);
+      if (enPkg) {
+        const entry = enPkg.get(id);
+        if (typeof entry === 'string') return entry;
+        if (typeof entry === 'object' && entry !== null) return entry[field] || entry.name || null;
+      }
+      return null;
+    }
+
+    const entry = pkg.get(id);
+    if (!entry) return null;
+    if (typeof entry === 'string') return entry;
+    if (typeof entry === 'object' && entry !== null) {
+      return entry[field] || entry.name || null;
+    }
+    return null;
+  }
+
+  /**
+   * In-place enrichment of canonical entities with imported locale data.
+   */
+  _applyLocaleToEntities(locale, namespace, pkg) {
+    const langKey = locale.toLowerCase().startsWith('es') ? 'es' : 'en';
+
+    if (namespace === 'move') {
+      this.moves.forEach(m => {
+        const entry = pkg.get(m.id);
+        if (entry) {
+          if (typeof entry === 'object') {
+            if (entry.name) m.names[langKey] = entry.name;
+            if (entry.effect) m.descriptions[langKey] = entry.effect;
+          } else if (typeof entry === 'string') {
+            m.names[langKey] = entry;
+          }
+        }
+      });
+    } else if (namespace === 'ability') {
+      this.abilities.forEach(a => {
+        const entry = pkg.get(a.id);
+        if (entry) {
+          if (typeof entry === 'object') {
+            if (entry.name) a.names[langKey] = entry.name;
+            if (entry.description) a.descriptions[langKey] = entry.description;
+          } else if (typeof entry === 'string') {
+            a.names[langKey] = entry;
+          }
+        }
+      });
+    } else if (namespace === 'pokemon') {
+      this.species.forEach(s => {
+        const entry = pkg.get(s.id);
+        if (entry && typeof entry === 'string') {
+          s.names[langKey] = entry;
+        }
+      });
+    }
   }
 
   /**
@@ -115,7 +274,6 @@ export class DataManager {
   /**
    * Generates dependency graph for a Pokémon.
    */
-
   getDependencyGraph(speciesId) {
     const s = this.getSpecies(speciesId);
     if (!s) return null;
@@ -161,4 +319,3 @@ export class DataManager {
 
 // Global DataManager singleton
 export const dataManager = new DataManager();
-

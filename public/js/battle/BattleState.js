@@ -40,7 +40,6 @@ export class PokemonBattleData {
       };
     });
 
-
     // Status condition (null, 'burn', 'paralysis', 'sleep', 'poison', 'freeze')
     this.status = null;
     this.statusTurns = 0;
@@ -94,7 +93,18 @@ export class PokemonBattleData {
   }
 
   clone() {
-    const copy = new PokemonBattleData({ id: this.speciesId, name: this.speciesName, types: this.types, baseStats: this.baseStats, abilities: { primary: this.ability }, learnableMoves: [] }, this.level, this.nickname);
+    const copy = new PokemonBattleData(
+      {
+        id: this.speciesId,
+        name: this.speciesName,
+        types: this.types,
+        baseStats: this.baseStats,
+        abilities: { primary: this.ability },
+        learnableMoves: []
+      },
+      this.level,
+      this.nickname
+    );
     copy.stats = { ...this.stats };
     copy.maxHp = this.maxHp;
     copy.currentHp = this.currentHp;
@@ -116,7 +126,8 @@ export class BattleState {
     this.rngState = this.seed >>> 0;
     this.turn = 1;
     this.wave = 1;
-    this.phase = 'WaitingForCommand'; // CommandPhase, MoveResolvePhase, DamagePhase, EffectPhase, EndTurnPhase
+    this.phase = 'WaitingForCommand'; // CommandPhase, MoveResolvePhase, DamagePhase, EffectPhase, EndTurnPhase, BattleFinished
+    this.winner = null; // 'player' | 'enemy' | null
     this.weather = 'none'; // 'sun', 'rain', 'sandstorm', 'snow', 'none'
     this.terrain = 'none'; // 'electric', 'grassy', 'misty', 'psychic', 'none'
     
@@ -151,6 +162,7 @@ export class BattleState {
       turn: this.turn,
       wave: this.wave,
       phase: this.phase,
+      winner: this.winner,
       weather: this.weather,
       terrain: this.terrain,
       rngState: this.rngState,
@@ -168,6 +180,7 @@ export class BattleState {
     this.turn = snapshot.turn;
     this.wave = snapshot.wave;
     this.phase = snapshot.phase;
+    this.winner = snapshot.winner || null;
     this.weather = snapshot.weather;
     this.terrain = snapshot.terrain;
     this.rngState = snapshot.rngState;
