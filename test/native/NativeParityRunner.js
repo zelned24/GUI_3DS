@@ -52,10 +52,19 @@ export class NativeParityRunner {
 
     // On non-Windows platforms (e.g. Linux CI runner), prefer host/system clang if available
     if (!isWin) {
-      try {
-        const out = execFileSync('which', ['clang'], { stdio: 'pipe' }).toString().trim().split(/\r?\n/)[0];
-        if (out && fs.existsSync(out)) clangExe = out;
-      } catch (e) {}
+      const standardUnixClangPaths = ['/usr/bin/clang', '/usr/local/bin/clang', '/opt/homebrew/bin/clang'];
+      for (const p of standardUnixClangPaths) {
+        if (fs.existsSync(p)) {
+          clangExe = p;
+          break;
+        }
+      }
+      if (!clangExe) {
+        try {
+          const out = execSync('sh -c "command -v clang"', { stdio: 'pipe' }).toString().trim().split(/\r?\n/)[0];
+          if (out && fs.existsSync(out)) clangExe = out;
+        } catch (e) {}
+      }
     }
 
     if (!clangExe) {

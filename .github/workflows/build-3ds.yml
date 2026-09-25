@@ -55,10 +55,10 @@ jobs:
           echo "DEVKITARM: $DEVKITARM"
           echo "CTRULIB:   $CTRULIB"
           
-          which arm-none-eabi-gcc
-          which arm-none-eabi-g++
-          which 3dsxtool
-          which tex3ds
+          command -v arm-none-eabi-gcc
+          command -v arm-none-eabi-g++
+          command -v 3dsxtool
+          command -v tex3ds
 
           test -f "$DEVKITPRO/libctru/include/3ds.h"
           test -f "$DEVKITPRO/libctru/include/citro2d.h" || test -f "$DEVKITPRO/portlibs/3ds/include/citro2d.h"
