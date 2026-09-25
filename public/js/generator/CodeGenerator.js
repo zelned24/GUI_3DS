@@ -101,11 +101,154 @@ class TouchButtonExporter extends BaseComponentExporter {
   }
 }
 
+class HealthBarExporter extends BaseComponentExporter {
+  getIncludes() {
+    return ['#include "ui/health_bar.hpp"'];
+  }
+
+  getMember(comp, varName) {
+    return `std::unique_ptr<HealthBar> ${varName};`;
+  }
+
+  getInitialization(comp, varName) {
+    const x = `${comp.x}.0f`;
+    const y = `${comp.y}.0f`;
+    const w = `${comp.width}.0f`;
+    const h = `${comp.height}.0f`;
+    const cur = comp.properties?.currentHp ?? 74;
+    const max = comp.properties?.maxHp ?? 82;
+    return [
+      `    ${varName} = std::make_unique<HealthBar>(${x}, ${y}, ${w}, ${h}, ${cur}, ${max});`
+    ];
+  }
+}
+
+class MoveButtonExporter extends BaseComponentExporter {
+  getIncludes() {
+    return ['#include "ui/move_button.hpp"', '#include "ui/focus_manager.hpp"'];
+  }
+
+  getMember(comp, varName) {
+    return `std::unique_ptr<MoveButton> ${varName};`;
+  }
+
+  getInitialization(comp, varName) {
+    const x = `${comp.x}.0f`;
+    const y = `${comp.y}.0f`;
+    const w = `${comp.width}.0f`;
+    const h = `${comp.height}.0f`;
+    const name = CodeGenerator.escapeString(comp.properties?.moveName || 'Tackle');
+    const type = CodeGenerator.escapeString(comp.properties?.moveType || 'Normal');
+    const pp = comp.properties?.currentPp ?? 20;
+    const focusId = comp.properties?.focusId ?? 0;
+    return [
+      `    ${varName} = std::make_unique<MoveButton>(${x}, ${y}, ${w}, ${h}, "${name}", "${type}", ${pp}, ${focusId});`,
+      `    m_focus_manager.addElement(${varName}.get());`
+    ];
+  }
+}
+
+class StatusBadgeExporter extends BaseComponentExporter {
+  getIncludes() {
+    return ['#include "ui/status_badge.hpp"'];
+  }
+
+  getMember(comp, varName) {
+    return `std::unique_ptr<StatusBadge> ${varName};`;
+  }
+
+  getInitialization(comp, varName) {
+    const x = `${comp.x}.0f`;
+    const y = `${comp.y}.0f`;
+    const w = `${comp.width}.0f`;
+    const h = `${comp.height}.0f`;
+    const status = CodeGenerator.escapeString(comp.properties?.status || 'NONE');
+    return [
+      `    ${varName} = std::make_unique<StatusBadge>(${x}, ${y}, ${w}, ${h}, StatusCondition::${status});`
+    ];
+  }
+}
+
+class PokemonSpriteExporter extends BaseComponentExporter {
+  getIncludes() {
+    return ['#include "ui/pokemon_sprite.hpp"'];
+  }
+
+  getMember(comp, varName) {
+    return `std::unique_ptr<PokemonSpriteView> ${varName};`;
+  }
+
+  getInitialization(comp, varName) {
+    const x = `${comp.x}.0f`;
+    const y = `${comp.y}.0f`;
+    const w = `${comp.width}.0f`;
+    const h = `${comp.height}.0f`;
+    const spId = comp.properties?.speciesId ?? 25;
+    const shiny = comp.properties?.shiny ? 'true' : 'false';
+    const back = comp.properties?.viewMode === 'Back' ? 'true' : 'false';
+    return [
+      `    ${varName} = std::make_unique<PokemonSpriteView>(${x}, ${y}, ${w}, ${h}, ${spId}, ${shiny}, ${back});`
+    ];
+  }
+}
+
+class WaveIndicatorExporter extends BaseComponentExporter {
+  getIncludes() {
+    return ['#include "ui/wave_indicator.hpp"'];
+  }
+
+  getMember(comp, varName) {
+    return `std::unique_ptr<WaveIndicator> ${varName};`;
+  }
+
+  getInitialization(comp, varName) {
+    const x = `${comp.x}.0f`;
+    const y = `${comp.y}.0f`;
+    const w = `${comp.width}.0f`;
+    const h = `${comp.height}.0f`;
+    const wave = comp.properties?.wave ?? 1;
+    const biome = CodeGenerator.escapeString(comp.properties?.biome || 'TOWN');
+    return [
+      `    ${varName} = std::make_unique<WaveIndicator>(${x}, ${y}, ${w}, ${h}, ${wave}, "${biome}");`
+    ];
+  }
+}
+
+class PokemonGridExporter extends BaseComponentExporter {
+  getIncludes() {
+    return ['#include "ui/pokemon_grid.hpp"', '#include "ui/focus_manager.hpp"'];
+  }
+
+  getMember(comp, varName) {
+    return `std::unique_ptr<PokemonGrid> ${varName};`;
+  }
+
+  getInitialization(comp, varName) {
+    const x = `${comp.x}.0f`;
+    const y = `${comp.y}.0f`;
+    const w = `${comp.width}.0f`;
+    const h = `${comp.height}.0f`;
+    const cols = comp.properties?.columns ?? 3;
+    const rows = comp.properties?.rows ?? 2;
+    const focusId = comp.properties?.focusId ?? 0;
+    return [
+      `    ${varName} = std::make_unique<PokemonGrid>(${x}, ${y}, ${w}, ${h}, ${cols}, ${rows}, ${focusId});`,
+      `    m_focus_manager.addElement(${varName}.get());`
+    ];
+  }
+}
+
 export class CodeGenerator {
   static exporters = new Map([
     ['RogueBox', new RogueBoxExporter()],
     ['PixelText', new PixelTextExporter()],
-    ['TouchButton', new TouchButtonExporter()]
+    ['TouchButton', new TouchButtonExporter()],
+    ['HealthBar', new HealthBarExporter()],
+    ['MoveButton', new MoveButtonExporter()],
+    ['StatusBadge', new StatusBadgeExporter()],
+    ['PokemonSprite', new PokemonSpriteExporter()],
+    ['WaveIndicator', new WaveIndicatorExporter()],
+    ['PokemonGrid', new PokemonGridExporter()]
   ]);
 
   /**

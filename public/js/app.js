@@ -659,6 +659,13 @@ class StudioApp {
         return;
       }
 
+      // Ctrl+P: Global Search (Species, Moves, Abilities, Screens, Assets)
+      if (e.ctrlKey && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        this._showGlobalSearchModal();
+        return;
+      }
+
       // Delete or Backspace: Remove selected
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
@@ -670,6 +677,95 @@ class StudioApp {
         this.canvasRenderer.render();
         return;
       }
+    });
+  }
+
+  _showGlobalSearchModal() {
+    let modal = document.getElementById('search_modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'search_modal';
+      modal.className = 'studio-modal active';
+      document.body.appendChild(modal);
+    } else {
+      modal.classList.add('active');
+    }
+
+    modal.innerHTML = `
+      <div class="search-modal-dialog">
+        <div class="search-modal-header">
+          <input type="text" id="global-search-input" placeholder="Search Pokémon, moves, abilities, screens, assets... (ESC to close)" autofocus>
+        </div>
+        <div class="search-modal-results" id="global-search-results">
+          <div class="search-hint">Type to search across PokéRogue data, screens, and assets...</div>
+        </div>
+      </div>
+    `;
+
+    const input = modal.querySelector('#global-search-input');
+    const resultsContainer = modal.querySelector('#global-search-results');
+
+    input.focus();
+
+    const doSearch = (query) => {
+      if (!query.trim()) {
+        resultsContainer.innerHTML = '<div class="search-hint">Type to search across PokéRogue data, screens, and assets...</div>';
+        return;
+      }
+
+      const results = window.app?.dataManager?.globalSearch(query) || [];
+      // Also add matching screens
+      for (const [id, screen] of this.model.screensMap.entries()) {
+        if (id.toLowerCase().includes(query.toLowerCase()) || (screen.name && screen.name.toLowerCase().includes(query.toLowerCase()))) {
+          results.unshift({ type: 'Screen', id, title: screen.name || id, subtitle: `${screen.components.length} components` });
+        }
+      }
+
+      if (results.length === 0) {
+        resultsContainer.innerHTML = '<div class="search-empty">No matching results found.</div>';
+        return;
+      }
+
+      resultsContainer.innerHTML = results.map(r => `
+        <div class="search-result-row" data-type="${r.type}" data-id="${r.id}">
+          <span class="search-badge badge-${r.type.toLowerCase()}">${r.type.toUpperCase()}</span>
+          <div class="search-info">
+            <span class="search-title">${r.title}</span>
+            <span class="search-sub">${r.subtitle}</span>
+          </div>
+        </div>
+      `).join('');
+
+      resultsContainer.querySelectorAll('.search-result-row').forEach(row => {
+        row.addEventListener('click', (e) => {
+          const type = e.currentTarget.dataset.type;
+          const id = e.currentTarget.dataset.id;
+          modal.classList.remove('active');
+
+          if (type === 'Screen') {
+            this.model.setActiveScreen(id);
+            this.setStudioMode('ui');
+          } else if (['Species', 'Move', 'Ability'].includes(type)) {
+            this.setStudioMode('data');
+            this.dataStudio.currentCategory = type.toLowerCase() === 'species' ? 'species' : (type.toLowerCase() === 'move' ? 'moves' : 'abilities');
+            this.dataStudio.selectedItemId = id;
+            this.dataStudio.render();
+          }
+        });
+      });
+    };
+
+    input.addEventListener('input', (e) => doSearch(e.target.value));
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        modal.classList.remove('active');
+        window.removeEventListener('keydown', onKeyDown);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.classList.remove('active');
     });
   }
 

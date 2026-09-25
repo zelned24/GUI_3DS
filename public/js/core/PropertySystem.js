@@ -12,7 +12,8 @@ export const PropertyTypes = {
   ENUM: 'enum',
   VECTOR2: 'vector2',
   SIZE: 'size',
-  ACTION: 'action'
+  ACTION: 'action',
+  JSON: 'json'
 };
 
 export class PropertyDefinition {
@@ -162,5 +163,15 @@ export const Props = {
       defaultValue,
       ...options
     });
+  },
+
+  json(displayName, defaultValue = null, options = {}) {
+    return new PropertyDefinition({
+      type: PropertyTypes.JSON,
+      displayName,
+      defaultValue,
+      ...options
+    });
   }
 };
+

@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "8555c08c823b856cbec4eb99ca84ea52a955836d",
+  "assetRevision": "87426a79611f9d212c4dc8af58e2834a05b93725",
+  "localeRevision": "23aea1cb0da5a0b15b836f3c243791591cc42303",
+  "metrics": {
+    "importedCount": 9,
+    "transformedCount": 0,
+    "generatedCount": 2,
+    "unsupportedCount": 0,
+    "losslessRate": "100%",
+    "editableRate": "100%",
+    "unsupportedRate": "0%"
+  },
+  "licensingSummary": {
+    "codeLicense": "AGPL-v3.0-only",
+    "assetsLicense": "REUSE compliance (per-file CC-BY-NC-SA-4.0 / LicenseRef-FAIR-USE)",
+    "trademarksDisclaimer": "Pokémon and Nintendo trademarks belong to Nintendo/Creatures Inc./GAME FREAK inc. PokéRogue code is licensed under AGPL-3.0-only."
+  },
+  "imported": [
+    {
+      "id": "pikachu",
+      "type": "SPECIES",
+      "source": {
+        "repository": "https://github.com/pagefaultgames/pokerogue",
+        "path": "src/data/balance/species/generation-01.ts",
+        "revision": "8555c08c823b856cbec4eb99ca84ea52a955836d",
+        "licenseRef": "AGPL-v3.0-only"
+      }
+    },
+    {
+      "id": "golem",
+      "type": "SPECIES",
+      "source": {
+        "repository": "https://github.com/pagefaultgames/pokerogue",
+        "path": "src/data/balance/species/generation-01.ts",
+        "revision": "8555c08c823b856cbec4eb99ca84ea52a955836d",
+        "licenseRef": "AGPL-v3.0-only"
+      }
+    },
+    {
+      "id": "thunderbolt",
+      "type": "MOVE",
+      "source": {
+        "repository": "https://github.com/pagefaultgames/pokerogue",
+        "path": "src/data/moves/move.ts",
+        "revision": "8555c08c823b856cbec4eb99ca84ea52a955836d",
+        "licenseRef": "AGPL-v3.0-only"
+      }
+    },
+    {
+      "id": "tackle",
+      "type": "MOVE",
+      "source": {
+        "repository": "https://github.com/pagefaultgames/pokerogue",
+        "path": "src/data/moves/move.ts",
+        "revision": "8555c08c823b856cbec4eb99ca84ea52a955836d",
+        "licenseRef": "AGPL-v3.0-only"
+      }
+    },
+    {
+      "id": "quick_attack",
+      "type": "MOVE",
+      "source": {
+        "repository": "https://github.com/pagefaultgames/pokerogue",
+        "path": "src/data/moves/move.ts",
+        "revision": "8555c08c823b856cbec4eb99ca84ea52a955836d",
+        "licenseRef": "AGPL-v3.0-only"
+      }
+    },
+    {
+      "id": "earthquake",
+      "type": "MOVE",
+      "source": {
+        "repository": "https://github.com/pagefaultgames/pokerogue",
+        "path": "src/data/moves/move.ts",
+        "revision": "8555c08c823b856cbec4eb99ca84ea52a955836d",
+        "licenseRef": "AGPL-v3.0-only"
+      }
+    },
+    {
+      "id": "rock_slide",
+      "type": "MOVE",
+      "source": {
+        "repository": "https://github.com/pagefaultgames/pokerogue",
+        "path": "src/data/moves/move.ts",
+        "revision": "8555c08c823b856cbec4eb99ca84ea52a955836d",
+        "licenseRef": "AGPL-v3.0-only"
+      }
+    },
+    {
+      "id": "static",
+      "type": "ABILITY",
+      "source": {
+        "repository": "https://github.com/pagefaultgames/pokerogue",
+        "path": "src/data/abilities/init-abilities.ts",
+        "revision": "8555c08c823b856cbec4eb99ca84ea52a955836d",
+        "licenseRef": "AGPL-v3.0-only"
+      }
+    },
+    {
+      "id": "sturdy",
+      "type": "ABILITY",
+      "source": {
+        "repository": "https://github.com/pagefaultgames/pokerogue",
+        "path": "src/data/abilities/init-abilities.ts",
+        "revision": "8555c08c823b856cbec4eb99ca84ea52a955836d",
+        "licenseRef": "AGPL-v3.0-only"
+      }
+    }
+  ],
+  "transformed": [],
+  "generated": [
+    {
+      "file": "romfs/data/species.bin",
+      "description": "Compact 24-byte record binary species table for Citro2D",
+      "generator": "CodeGenerator / RomFSExporter"
+    },
+    {
+      "file": "romfs/data/moves.bin",
+      "description": "Compact 12-byte record binary move table for Citro2D",
+      "generator": "CodeGenerator / RomFSExporter"
+    }
+  ],
+  "unsupported": []
+}

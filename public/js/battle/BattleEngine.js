@@ -1,22 +1,22 @@
 /**
  * BattleEngine.js
- * Core combat execution engine for PokéRogue 3DS.
- * Features:
- *  - Phase-based execution queue (MoveResolvePhase, AccuracyPhase, DamagePhase, EffectPhase, FaintCheckPhase)
- *  - Event Bus emitting granular battle events
- *  - Official Gen 9 damage breakdown calculation with STAB, type effectiveness, crit & RNG
- *  - Ability triggers (Static, Sturdy)
- *  - Reproducible deterministic steps for Battle Lab debugging & time-travel
+ * Core combat simulation engine for PokéRogue 3DS.
+ * Fully deterministic, modular, phase-based execution with explainable AI and reproducible replays.
  */
 
-import { dataManager } from '../data/DataManager.js';
+import { PhaseQueue } from './PhaseQueue.js';
+import { TurnOrderResolver } from './resolvers/TurnOrderResolver.js';
+import { AccuracyResolver } from './resolvers/AccuracyResolver.js';
+import { DamageResolver } from './resolvers/DamageResolver.js';
+import { StatusResolver } from './resolvers/StatusResolver.js';
+import { AbilityResolver } from './resolvers/AbilityResolver.js';
+import { AIAdapter } from './resolvers/AIAdapter.js';
 
 export class BattleEngine {
   constructor(battleState) {
     this.state = battleState;
     this.listeners = new Map();
-    this.phaseQueue = [];
-    this.currentAction = null;
+    this.phaseQueue = new PhaseQueue();
     this.turnHistory = [];
   }
 
@@ -34,18 +34,31 @@ export class BattleEngine {
     this.listeners.set(eventName, filtered);
   }
 
-  emit(eventName, payload) {
-    const event = { type: eventName, ...payload, timestamp: Date.now() };
+  /**
+   * Deterministic event emission.
+   * Uses monotonic sequence numbers instead of non-deterministic timestamps.
+   */
+  emit(eventName, payload = {}) {
+    const seq = this.state.nextSequence();
+    const event = {
+      eventId: `ev_${seq}`,
+      sequenceNumber: seq,
+      type: eventName,
+      phase: this.state.phase,
+      ...payload
+    };
+
     this.state.eventLog.push(event);
     if (this.listeners.has(eventName)) {
       this.listeners.get(eventName).forEach(cb => {
         try { cb(event); } catch (e) { console.error('Error in event listener:', e); }
       });
     }
+    return event;
   }
 
   /**
-   * Enqueue a full turn with Player move vs AI selected move
+   * Enqueues a full turn with Player move vs AI selected move.
    */
   queueTurn(playerMoveId) {
     if (this.state.player.active.fainted || this.state.enemy.active.fainted) {
@@ -55,63 +68,61 @@ export class BattleEngine {
     // Save snapshot of turn start for rewind
     this.turnHistory.push(this.state.createSnapshot());
 
-    this.emit('TurnStarted', { turn: this.state.turn });
-
     const playerPokemon = this.state.player.active;
     const enemyPokemon = this.state.enemy.active;
 
+    // Resolve Player move
     const pMove = playerPokemon.moves.find(m => m.id === playerMoveId) || playerPokemon.moves[0];
-    // Enemy AI: simple heuristic selection (choose highest base power or first available move)
-    const eMove = enemyPokemon.moves.reduce((best, m) => (!best || m.power > best.power ? m : best), null) || enemyPokemon.moves[0];
 
-    // Determine turn order based on priority and effective speed
-    const pPriority = pMove.priority || 0;
-    const ePriority = eMove.priority || 0;
-    const pSpd = playerPokemon.getEffectiveStat('spd');
-    const eSpd = enemyPokemon.getEffectiveStat('spd');
+    // Resolve AI decision with explainable candidate scores
+    const aiDecision = AIAdapter.selectBestAction(enemyPokemon, playerPokemon, { weather: this.state.weather });
+    this.state.lastAIDecision = aiDecision;
+    const eMove = aiDecision.selectedCandidate?.move || enemyPokemon.moves[0];
 
-    let playerFirst = true;
-    if (pPriority !== ePriority) {
-      playerFirst = pPriority > ePriority;
-    } else if (pSpd !== eSpd) {
-      playerFirst = pSpd > eSpd;
-    } else {
-      playerFirst = this.state.random() > 0.5;
-    }
+    const playerAction = { user: playerPokemon, target: enemyPokemon, move: pMove, isPlayer: true };
+    const enemyAction = { user: enemyPokemon, target: playerPokemon, move: eMove, isPlayer: false };
 
-    const firstAction = playerFirst
-      ? { user: playerPokemon, target: enemyPokemon, move: pMove, isPlayer: true }
-      : { user: enemyPokemon, target: playerPokemon, move: eMove, isPlayer: false };
+    // Resolve turn order
+    const order = TurnOrderResolver.resolve(playerAction, enemyAction, this.state.rng);
 
-    const secondAction = playerFirst
-      ? { user: enemyPokemon, target: playerPokemon, move: eMove, isPlayer: false }
-      : { user: playerPokemon, target: enemyPokemon, move: pMove, isPlayer: true };
+    this.emit('TurnStarted', {
+      turn: this.state.turn,
+      playerMove: pMove.name,
+      enemyMove: eMove.name,
+      turnOrderReason: order.reason
+    });
 
-    this.phaseQueue = [
-      { phase: 'MoveResolvePhase', action: firstAction },
-      { phase: 'MoveResolvePhase', action: secondAction },
-      { phase: 'EndTurnPhase', action: null }
-    ];
+    this.phaseQueue.clear();
+    this.phaseQueue.enqueue('SpeedOrderPhase', { order });
+    this.phaseQueue.enqueue('ActionPhase', { action: order.first });
+    this.phaseQueue.enqueue('ActionPhase', { action: order.second });
+    this.phaseQueue.enqueue('TurnEndPhase', {});
 
-    this.state.phase = this.phaseQueue[0].phase;
+    this.state.phase = 'SpeedOrderPhase';
     return true;
   }
 
   /**
-   * Execute the next phase in the queue step-by-step
+   * Executes the next phase in the queue step-by-step.
    */
   step() {
     if (this.phaseQueue.length === 0) {
       return { done: true, phase: this.state.phase };
     }
 
-    const item = this.phaseQueue.shift();
-    this.state.phase = item.phase;
+    const current = this.phaseQueue.dequeue();
+    this.state.phase = current.name;
 
-    if (item.phase === 'MoveResolvePhase') {
-      this._resolveMove(item.action);
-    } else if (item.phase === 'EndTurnPhase') {
-      this._resolveEndTurn();
+    if (current.name === 'SpeedOrderPhase') {
+      this.emit('TurnOrderResolved', {
+        first: current.payload.order.first.user.nickname,
+        second: current.payload.order.second.user.nickname,
+        reason: current.payload.order.reason
+      });
+    } else if (current.name === 'ActionPhase') {
+      this._resolveActionPhase(current.payload.action);
+    } else if (current.name === 'TurnEndPhase') {
+      this._resolveTurnEndPhase();
     }
 
     const done = this.phaseQueue.length === 0;
@@ -119,7 +130,7 @@ export class BattleEngine {
   }
 
   /**
-   * Run entire turn synchronously until queue is empty
+   * Runs the entire turn synchronously until queue is empty.
    */
   runFullTurn(playerMoveId) {
     this.queueTurn(playerMoveId);
@@ -128,50 +139,54 @@ export class BattleEngine {
     }
   }
 
-  _resolveMove(action) {
+  _resolveActionPhase(action) {
     const { user, target, move, isPlayer } = action;
 
     if (user.fainted) {
-      return; // Cannot move if already fainted earlier in turn
+      return; // Cannot move if fainted earlier this turn
     }
 
-    // Check status prevention (paralysis 25% chance)
-    if (user.status === 'paralysis' && this.state.random() < 0.25) {
-      this.emit('StatusPreventedMove', { user: user.nickname, status: 'paralysis' });
+    // 1. Status Check (e.g. 25% paralysis roll)
+    const canMoveResult = StatusResolver.checkCanMove(user, this.state.rng, (ev, p) => this.emit(ev, p));
+    if (!canMoveResult.canMove) {
       return;
     }
 
     this.emit('MoveStarted', { user: user.nickname, move: move.name, isPlayer });
 
-    // Accuracy Check
-    if (move.accuracy && move.accuracy < 100) {
-      const roll = this.state.random() * 100;
-      if (roll > move.accuracy) {
-        this.emit('MoveMissed', { user: user.nickname, target: target.nickname, move: move.name });
-        return;
-      }
+    // 2. Accuracy Check
+    const accResult = AccuracyResolver.resolve(user, target, move, this.state.rng);
+    if (!accResult.hit) {
+      this.emit('MoveMissed', {
+        user: user.nickname,
+        target: target.nickname,
+        move: move.name,
+        roll: accResult.roll,
+        threshold: accResult.threshold
+      });
+      return;
     }
 
     this.emit('MoveHit', { user: user.nickname, target: target.nickname, move: move.name });
 
-    // Damage Calculation
+    // 3. Damage Calculation
     if (move.power > 0) {
-      const breakdown = this.calculateDamage(user, target, move);
+      const breakdown = DamageResolver.resolve(user, target, move, this.state.rng, { weather: this.state.weather });
       this.state.damageBreakdown = breakdown;
-
       this.emit('DamageCalculated', { breakdown });
 
-      // Apply damage
+      // 4. Pre-Damage Abilities (e.g. Sturdy)
+      const { finalDamage } = AbilityResolver.onPreDamageApplied(
+        target,
+        user,
+        move,
+        breakdown.finalDamage,
+        (ev, p) => this.emit(ev, p)
+      );
+
+      // 5. Apply Damage
       const prevHp = target.currentHp;
-      let damageToApply = breakdown.finalDamage;
-
-      // Sturdy check: if target at full HP and would faint, retain 1 HP
-      if (target.ability === 'Sturdy' && target.currentHp === target.maxHp && damageToApply >= target.currentHp) {
-        damageToApply = target.currentHp - 1;
-        this.emit('AbilityTriggered', { pokemon: target.nickname, ability: 'Sturdy', effect: 'Endured the hit!' });
-      }
-
-      target.currentHp = Math.max(0, target.currentHp - damageToApply);
+      target.currentHp = Math.max(0, target.currentHp - finalDamage);
       const actualDamage = prevHp - target.currentHp;
 
       this.emit('DamageApplied', {
@@ -188,75 +203,34 @@ export class BattleEngine {
         isPlayer: !isPlayer
       });
 
-      // Contact Ability check (Static: 30% chance of paralysis on contact if move makes contact)
-      if (target.ability === 'Static' && move.category === 'Physical' && user.status === null) {
-        if (this.state.random() < 0.30) {
-          user.status = 'paralysis';
-          this.emit('AbilityTriggered', { pokemon: target.nickname, ability: 'Static', effect: `Paralyzed ${user.nickname}!` });
-          this.emit('StatusApplied', { pokemon: user.nickname, status: 'paralysis' });
-        }
-      }
+      // 6. Post-Damage Abilities (e.g. Static contact paralysis)
+      AbilityResolver.onPostDamageReceived(
+        target,
+        user,
+        move,
+        actualDamage,
+        this.state.rng,
+        (ev, p) => this.emit(ev, p)
+      );
 
-      // Check Faint
+      // 7. Faint Check
       if (target.currentHp <= 0) {
         target.fainted = true;
         this.emit('PokemonFainted', { pokemon: target.nickname, isPlayer: !isPlayer });
-        this.phaseQueue = [];
-        this._resolveEndTurn();
+        this.phaseQueue.clear();
+        this._resolveTurnEndPhase();
         this.state.phase = 'BattleFinished';
       }
     }
   }
 
+  _resolveTurnEndPhase() {
+    // End-of-turn residual status damage (burn, poison)
+    StatusResolver.resolveTurnEndStatus(this.state.player.active, (ev, p) => this.emit(ev, p));
+    StatusResolver.resolveTurnEndStatus(this.state.enemy.active, (ev, p) => this.emit(ev, p));
 
-  calculateDamage(attacker, defender, move) {
-    const level = attacker.level;
-    const power = move.power;
-
-    // Determine stats based on Physical / Special
-    const isSpecial = move.category === 'Special';
-    const aStat = isSpecial ? attacker.getEffectiveStat('spatk') : attacker.getEffectiveStat('atk');
-    const dStat = isSpecial ? defender.getEffectiveStat('spdef') : defender.getEffectiveStat('def');
-
-    // STAB (Same-Type Attack Bonus)
-    const stab = attacker.types.includes(move.type) ? 1.5 : 1.0;
-
-    // Type Effectiveness
-    const typeEff = dataManager.getTypeMultiplier(move.type, defender.types);
-
-    // Critical Hit (approx 1/24 ~ 4.17%)
-    const isCrit = this.state.random() < (1 / 24);
-    const critMult = isCrit ? 1.5 : 1.0;
-
-    // Random Factor: 0.85 to 1.00
-    const randMult = this.state.randomRange(0.85, 1.0);
-
-    // Official Gen 9 damage formula
-    const baseDamage = Math.floor(Math.floor((Math.floor((2 * level) / 5 + 2) * power * aStat) / dStat) / 50) + 2;
-    const finalDamage = Math.max(1, Math.floor(baseDamage * stab * typeEff * critMult * randMult));
-
-    return {
-      attacker: attacker.nickname,
-      defender: defender.nickname,
-      move: move.name,
-      moveType: move.type,
-      category: move.category,
-      basePower: power,
-      attackStat: aStat,
-      defenseStat: dStat,
-      baseDamage,
-      stab,
-      typeEffectiveness: typeEff,
-      isCritical: isCrit,
-      criticalMultiplier: critMult,
-      randomFactor: parseFloat(randMult.toFixed(3)),
-      finalDamage
-    };
-  }
-
-  _resolveEndTurn() {
     this.state.turn++;
-    this.state.phase = 'WaitingForCommand';
+    this.state.phase = this.state.player.active.fainted || this.state.enemy.active.fainted ? 'BattleFinished' : 'WaitingForCommand';
     this.emit('TurnEnded', { turn: this.state.turn });
   }
 
@@ -264,7 +238,7 @@ export class BattleEngine {
     if (this.turnHistory.length === 0) return false;
     const previous = this.turnHistory.pop();
     this.state.restoreSnapshot(previous);
-    this.phaseQueue = [];
+    this.phaseQueue.clear();
     this.emit('TurnRewound', { turn: this.state.turn });
     return true;
   }

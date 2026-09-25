@@ -6,7 +6,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/run_tests.js"
+    "test": "node test/run_tests.js",
+    "build:romfs": "node scripts/build_romfs.js"
   },
   "keywords": [
     "3ds",

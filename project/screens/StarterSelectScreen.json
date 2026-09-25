@@ -1,0 +1,245 @@
+{
+  "id": "StarterSelectScreen",
+  "name": "Starter Selection Screen",
+  "top": {
+    "width": 400,
+    "height": 240,
+    "backgroundColor": "#12141c"
+  },
+  "bottom": {
+    "width": 320,
+    "height": 240,
+    "backgroundColor": "#1a1824"
+  },
+  "components": [
+    {
+      "id": "top_frame",
+      "type": "RogueBox",
+      "screen": "top",
+      "x": 10,
+      "y": 10,
+      "width": 380,
+      "height": 220,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 1,
+      "parent": null,
+      "properties": {
+        "backgroundColor": "#181e2b",
+        "borderColor": "#c83834",
+        "borderWidth": 2,
+        "borderRadius": 4
+      }
+    },
+    {
+      "id": "wave_indicator",
+      "type": "WaveIndicator",
+      "screen": "top",
+      "x": 20,
+      "y": 20,
+      "width": 130,
+      "height": 34,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 2,
+      "parent": "top_frame",
+      "properties": {
+        "wave": 1,
+        "biome": "TOWN",
+        "isBoss": false,
+        "showProgressDots": true,
+        "backgroundColor": "#121620",
+        "textColor": "#ffffff"
+      }
+    },
+    {
+      "id": "starter_title",
+      "type": "PixelText",
+      "screen": "top",
+      "x": 160,
+      "y": 22,
+      "width": 210,
+      "height": 28,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 2,
+      "parent": "top_frame",
+      "properties": {
+        "text": "SELECT STARTER (10 PTS)",
+        "fontSize": 13,
+        "color": "#ffcb05",
+        "align": "right"
+      }
+    },
+    {
+      "id": "active_starter_sprite",
+      "type": "PokemonSprite",
+      "screen": "top",
+      "x": 30,
+      "y": 70,
+      "width": 110,
+      "height": 110,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 3,
+      "parent": "top_frame",
+      "properties": {
+        "speciesId": 25,
+        "speciesName": "pikachu",
+        "viewMode": "Front",
+        "shiny": false,
+        "female": false,
+        "scale": 2,
+        "showBorder": true
+      }
+    },
+    {
+      "id": "active_starter_name",
+      "type": "PixelText",
+      "screen": "top",
+      "x": 160,
+      "y": 70,
+      "width": 210,
+      "height": 24,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 3,
+      "parent": "top_frame",
+      "properties": {
+        "text": "PIKACHU #025",
+        "fontSize": 16,
+        "color": "#ffffff",
+        "align": "left"
+      }
+    },
+    {
+      "id": "active_starter_stats",
+      "type": "PixelText",
+      "screen": "top",
+      "x": 160,
+      "y": 98,
+      "width": 210,
+      "height": 20,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 3,
+      "parent": "top_frame",
+      "properties": {
+        "text": "HP: 35  ATK: 55  DEF: 40  SPD: 90",
+        "fontSize": 11,
+        "color": "#a0aec0",
+        "align": "left"
+      }
+    },
+    {
+      "id": "active_starter_hp",
+      "type": "HealthBar",
+      "screen": "top",
+      "x": 160,
+      "y": 128,
+      "width": 200,
+      "height": 18,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 3,
+      "parent": "top_frame",
+      "properties": {
+        "pokemonBinding": "pikachu",
+        "currentHp": 35,
+        "maxHp": 35,
+        "showNumbers": true,
+        "highColor": "#48bb78",
+        "medColor": "#ecc94b",
+        "lowColor": "#f56565",
+        "backgroundColor": "#1a202c",
+        "borderColor": "#4a5568"
+      }
+    },
+    {
+      "id": "active_starter_badge",
+      "type": "StatusBadge",
+      "screen": "top",
+      "x": 160,
+      "y": 158,
+      "width": 64,
+      "height": 20,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 3,
+      "parent": "top_frame",
+      "properties": {
+        "statusBinding": "pikachu.status",
+        "status": "NONE",
+        "compact": false,
+        "fontSize": 10
+      }
+    },
+    {
+      "id": "bottom_frame",
+      "type": "RogueBox",
+      "screen": "bottom",
+      "x": 10,
+      "y": 8,
+      "width": 300,
+      "height": 224,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 1,
+      "parent": null,
+      "properties": {
+        "backgroundColor": "#1a1f2c",
+        "borderColor": "#4a5568",
+        "borderWidth": 2,
+        "borderRadius": 4
+      }
+    },
+    {
+      "id": "starters_grid",
+      "type": "PokemonGrid",
+      "screen": "bottom",
+      "x": 15,
+      "y": 14,
+      "width": 290,
+      "height": 166,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 2,
+      "parent": "bottom_frame",
+      "properties": {
+        "columns": 3,
+        "rows": 2,
+        "selectedIndex": 3,
+        "action": "SELECT_STARTER",
+        "focusId": 0,
+        "startersData": [
+          { "speciesId": 1, "name": "Bulbasaur", "cost": 3, "shiny": false, "hp": 45, "atk": 49, "def": 49 },
+          { "speciesId": 4, "name": "Charmander", "cost": 3, "shiny": false, "hp": 39, "atk": 52, "def": 43 },
+          { "speciesId": 7, "name": "Squirtle", "cost": 3, "shiny": false, "hp": 44, "atk": 48, "def": 65 },
+          { "speciesId": 25, "name": "Pikachu", "cost": 4, "shiny": true, "hp": 35, "atk": 55, "def": 40 },
+          { "speciesId": 74, "name": "Geodude", "cost": 2, "shiny": false, "hp": 40, "atk": 80, "def": 100 },
+          { "speciesId": 76, "name": "Golem", "cost": 5, "shiny": false, "hp": 80, "atk": 120, "def": 130 }
+        ]
+      }
+    },
+    {
+      "id": "btn_confirm_starter",
+      "type": "TouchButton",
+      "screen": "bottom",
+      "x": 40,
+      "y": 186,
+      "width": 240,
+      "height": 38,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 3,
+      "parent": "bottom_frame",
+      "properties": {
+        "label": "[ CONFIRM STARTERS (A) ]",
+        "action": "CONFIRM_STARTERS",
+        "focusId": 1,
+        "backgroundColor": "#2b6cb0",
+        "textColor": "#ffffff"
+      }
+    }
+  ]
+}
