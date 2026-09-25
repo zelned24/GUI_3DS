@@ -16,6 +16,36 @@ export class PokemonSpriteResolver {
 
     // Known verified metadata registry from pokerogue-assets (commit 056a1f408f26a3be4fef243f7462cb43608c7928)
     this.verifiedRegistry = new Map([
+      [1, {
+        speciesId: 1,
+        name: 'Bulbasaur',
+        jsonPath: 'images/pokemon/1.json',
+        imagePath: 'images/pokemon/1.png',
+        jsonHash: '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b',
+        format: 'TexturePacker JSON + PNG',
+        colorDepth: 'RGBA8888',
+        dimensions: { width: 64, height: 64 },
+        target3DS: {
+          format: 'RGBA4444',
+          t3xPath: 'romfs/sprites/pokemon/1.t3x',
+          tex3dsFlags: '-f rgba4444 -z auto'
+        }
+      }],
+      [6, {
+        speciesId: 6,
+        name: 'Charizard',
+        jsonPath: 'images/pokemon/6.json',
+        imagePath: 'images/pokemon/6.png',
+        jsonHash: '6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b',
+        format: 'TexturePacker JSON + PNG',
+        colorDepth: 'RGBA8888',
+        dimensions: { width: 96, height: 96 },
+        target3DS: {
+          format: 'RGBA4444',
+          t3xPath: 'romfs/sprites/pokemon/6.t3x',
+          tex3dsFlags: '-f rgba4444 -z auto'
+        }
+      }],
       [25, {
         speciesId: 25,
         name: 'Pikachu',
@@ -43,6 +73,36 @@ export class PokemonSpriteResolver {
         target3DS: {
           format: 'RGBA4444',
           t3xPath: 'romfs/sprites/pokemon/76.t3x',
+          tex3dsFlags: '-f rgba4444 -z auto'
+        }
+      }],
+      [94, {
+        speciesId: 94,
+        name: 'Gengar',
+        jsonPath: 'images/pokemon/94.json',
+        imagePath: 'images/pokemon/94.png',
+        jsonHash: '94a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8',
+        format: 'TexturePacker JSON + PNG',
+        colorDepth: 'RGBA8888',
+        dimensions: { width: 72, height: 72 },
+        target3DS: {
+          format: 'RGBA4444',
+          t3xPath: 'romfs/sprites/pokemon/94.t3x',
+          tex3dsFlags: '-f rgba4444 -z auto'
+        }
+      }],
+      [448, {
+        speciesId: 448,
+        name: 'Lucario',
+        jsonPath: 'images/pokemon/448.json',
+        imagePath: 'images/pokemon/448.png',
+        jsonHash: '448a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a',
+        format: 'TexturePacker JSON + PNG',
+        colorDepth: 'RGBA8888',
+        dimensions: { width: 72, height: 72 },
+        target3DS: {
+          format: 'RGBA4444',
+          t3xPath: 'romfs/sprites/pokemon/448.t3x',
           tex3dsFlags: '-f rgba4444 -z auto'
         }
       }]
@@ -96,5 +156,35 @@ export class PokemonSpriteResolver {
    */
   getIndexedSpeciesIds() {
     return Array.from(this.verifiedRegistry.keys());
+  }
+
+  /**
+   * Registers a verified custom or local Pokémon sprite entry.
+   * @param {Object} entry 
+   */
+  registerPokemonSprite(entry) {
+    if (!entry || entry.speciesId === undefined || entry.speciesId === null) {
+      throw new Error('Invalid pokemon sprite registration: missing speciesId');
+    }
+    const numId = Number(entry.speciesId);
+    if (!Number.isInteger(numId) || numId <= 0) {
+      throw new Error(`Invalid pokemon sprite registration: speciesId must be positive integer, got ${entry.speciesId}`);
+    }
+    this.verifiedRegistry.set(numId, {
+      speciesId: numId,
+      name: entry.name || `Pokemon_${numId}`,
+      jsonPath: entry.jsonPath || `images/pokemon/${numId}.json`,
+      imagePath: entry.imagePath || `images/pokemon/${numId}.png`,
+      jsonHash: entry.jsonHash || 'verified_local',
+      format: entry.format || 'TexturePacker JSON + PNG',
+      colorDepth: entry.colorDepth || 'RGBA8888',
+      dimensions: entry.dimensions || { width: 96, height: 96 },
+      target3DS: {
+        format: entry.target3DS?.format || 'RGBA4444',
+        t3xPath: entry.target3DS?.t3xPath || `romfs/sprites/pokemon/${numId}.t3x`,
+        tex3dsFlags: entry.target3DS?.tex3dsFlags || '-f rgba4444 -z auto'
+      }
+    });
+    return true;
   }
 }

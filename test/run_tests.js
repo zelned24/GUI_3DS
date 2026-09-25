@@ -2,6 +2,7 @@ import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { execFileSync } from 'child_process';
 
 import { ComponentRegistry } from '../public/js/components/ComponentRegistry.js';
 import { ProjectModel } from '../public/js/core/ProjectModel.js';
@@ -48,6 +49,7 @@ import { AnimationTrack } from '../public/js/animation/AnimationTrack.js';
 import { TimelineEvaluator } from '../public/js/animation/TimelineEvaluator.js';
 import { SceneValidator } from '../public/js/generator/SceneValidator.js';
 import { SceneCppExporter } from '../public/js/generator/SceneCppExporter.js';
+import { NativeParityRunner } from './native/NativeParityRunner.js';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -2422,6 +2424,407 @@ test('BETA-UI-3.16: SceneValidator rejects corrupted scenes before export', () =
   assert.ok(val5.errors.some(e => e.includes('Invalid Top Screen dimensions')));
   assert.throws(() => SceneCppExporter.export(badScene5), /validation failed/);
 });
+
+test('BETA-UI-3.17: Real Native Parity: Real compiled C++ execution matches TimelineEvaluator across all 5 curves, tracks, and keyframe intervals', async () => {
+  // Construct a scene exercising STEP, LINEAR, EASE_IN, EASE_OUT, EASE_IN_OUT, Opacity, Visibility, and multiple tracks
+  const parityScene = new SceneModel({
+    id: 'ParityVerificationScene',
+    durationFrames: 60,
+    fps: 60,
+    top: { width: 400, height: 240, backgroundColor: '#101010' },
+    bottom: { width: 320, height: 240, backgroundColor: '#202020' },
+    nodes: [
+      {
+        id: 'hero_sprite',
+        type: 'Image',
+        screen: 'top',
+        x: 50,
+        y: 50,
+        width: 64,
+        height: 64,
+        scaleX: 1.0,
+        scaleY: 1.0,
+        rotation: 0.0,
+        opacity: 1.0,
+        visible: true,
+        properties: { asset: 'ui_dialog_box' }
+      }
+    ],
+    tracks: [
+      // 1. STEP interpolation
+      {
+        id: 'track_step',
+        targetNodeId: 'hero_sprite',
+        propertyPath: 'transform.x',
+        keyframes: [
+          { frame: 10, value: 50, interpolation: 'step' },
+          { frame: 30, value: 150, interpolation: 'step' },
+          { frame: 50, value: 250, interpolation: 'step' }
+        ]
+      },
+      // 2. LINEAR interpolation
+      {
+        id: 'track_linear',
+        targetNodeId: 'hero_sprite',
+        propertyPath: 'transform.y',
+        keyframes: [
+          { frame: 10, value: 20, interpolation: 'linear' },
+          { frame: 50, value: 180, interpolation: 'linear' }
+        ]
+      },
+      // 3. EASE_IN interpolation
+      {
+        id: 'track_ease_in',
+        targetNodeId: 'hero_sprite',
+        propertyPath: 'transform.scaleX',
+        keyframes: [
+          { frame: 10, value: 1.0, interpolation: 'ease-in' },
+          { frame: 50, value: 2.5, interpolation: 'ease-in' }
+        ]
+      },
+      // 4. EASE_OUT interpolation
+      {
+        id: 'track_ease_out',
+        targetNodeId: 'hero_sprite',
+        propertyPath: 'transform.scaleY',
+        keyframes: [
+          { frame: 10, value: 1.0, interpolation: 'ease-out' },
+          { frame: 50, value: 3.0, interpolation: 'ease-out' }
+        ]
+      },
+      // 5. EASE_IN_OUT interpolation
+      {
+        id: 'track_ease_in_out',
+        targetNodeId: 'hero_sprite',
+        propertyPath: 'transform.rotation',
+        keyframes: [
+          { frame: 10, value: 0.0, interpolation: 'ease-in-out' },
+          { frame: 50, value: 180.0, interpolation: 'ease-in-out' }
+        ]
+      },
+      // 6. Opacity track
+      {
+        id: 'track_opacity',
+        targetNodeId: 'hero_sprite',
+        propertyPath: 'transform.opacity',
+        keyframes: [
+          { frame: 0, value: 0.0, interpolation: 'linear' },
+          { frame: 30, value: 0.6, interpolation: 'linear' },
+          { frame: 50, value: 1.0, interpolation: 'linear' }
+        ]
+      },
+      // 7. Visibility track
+      {
+        id: 'track_visibility',
+        targetNodeId: 'hero_sprite',
+        propertyPath: 'visible',
+        keyframes: [
+          { frame: 0, value: true, interpolation: 'step' },
+          { frame: 25, value: false, interpolation: 'step' },
+          { frame: 45, value: true, interpolation: 'step' }
+        ]
+      }
+    ]
+  });
+
+  // Verify across frame 0, primer keyframe, frame intermedio, último keyframe, frame posterior
+  const framesToTest = [0, 10, 20, 25, 30, 40, 50, 60];
+  const parityResult = await NativeParityRunner.runParityTest(parityScene, { frames: framesToTest });
+
+  assert.strictEqual(parityResult.pass, true, 'All evaluations must match between real compiled C++ and TimelineEvaluator.js');
+  assert.ok(parityResult.totalChecks >= 56, `Must perform checks across all properties and frames (performed: ${parityResult.totalChecks})`);
+
+  // Verify PikachuEntrance scene parity as well
+  const pikaFilePath = path.join(__dirname, '..', 'project', 'screens', 'PikachuEntrance.json');
+  const pikaData = JSON.parse(fs.readFileSync(pikaFilePath, 'utf8'));
+  const pikaScene = new SceneModel(pikaData);
+  const pikaParity = await NativeParityRunner.runParityTest(pikaScene);
+  assert.strictEqual(pikaParity.pass, true, 'PikachuEntrance scene must have 100% parity with real compiled C++');
+});
+
+test('BETA-UI-3.18: Native Build Target: devkitARM / Citro2D compilation passes with full symbol resolution and 0 linker errors', () => {
+  const nativeBuildScript = path.join(__dirname, 'run_native_build.mjs');
+  assert.ok(fs.existsSync(nativeBuildScript), 'run_native_build.mjs must exist');
+
+  const stdout = execFileSync(process.execPath, [nativeBuildScript], { encoding: 'utf8' });
+  assert.ok(stdout.includes('NATIVE BUILD VERIFICATION PASSED'), 'Native build script must report 100% success');
+  assert.ok(stdout.includes('main() returned 0'), 'Native main() execution must succeed');
+  assert.ok(stdout.includes('arm-none-eabi'), 'Must verify 3DS ARM instruction set compilation');
+});
+
+test('BETA-UI-3.19: Missing asset rejection: SceneValidator & SceneCppExporter reject missing assets and NEVER generate fictitious paths', () => {
+  const badAssetScene = {
+    id: 'BadAssetScene',
+    durationFrames: 60,
+    fps: 60,
+    top: { width: 400, height: 240 },
+    bottom: { width: 320, height: 240 },
+    nodes: [
+      {
+        id: 'ghost_node',
+        type: 'Image',
+        screen: 'top',
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        properties: { asset: 'fictitious_bg_ghost_arena' }
+      }
+    ]
+  };
+
+  const validation = SceneValidator.validate(badAssetScene);
+  assert.strictEqual(validation.valid, false, 'Scene with unresolvable asset must fail validation');
+  assert.ok(
+    validation.errors.some(e => e.includes('references unresolvable asset "fictitious_bg_ghost_arena"')),
+    'Validation error must explicitly cite unresolvable asset'
+  );
+
+  // Attempting to export must throw and NOT generate romfs/gfx/fictitious_bg_ghost_arena.t3x
+  let threw = false;
+  try {
+    SceneCppExporter.export(badAssetScene);
+  } catch (err) {
+    threw = true;
+    assert.ok(err.message.includes('validation failed') || err.message.includes('unresolvable asset'));
+  }
+  assert.strictEqual(threw, true, 'Exporter must throw error on unresolvable asset');
+});
+
+test('BETA-UI-3.20: Missing Pokémon asset rejection: SceneValidator & SceneCppExporter reject unindexed dex ID', () => {
+  const badPkmnScene = {
+    id: 'BadPkmnScene',
+    durationFrames: 60,
+    fps: 60,
+    top: { width: 400, height: 240 },
+    bottom: { width: 320, height: 240 },
+    nodes: [
+      {
+        id: 'pkmn_fake',
+        type: 'PokemonSprite',
+        screen: 'top',
+        x: 0,
+        y: 0,
+        width: 96,
+        height: 96,
+        properties: { nationalDexId: 99999 }
+      }
+    ]
+  };
+
+  const validation = SceneValidator.validate(badPkmnScene);
+  assert.strictEqual(validation.valid, false, 'Scene with unindexed Pokémon dexId must fail validation');
+  assert.ok(
+    validation.errors.some(e => e.includes('#99999')),
+    'Validation error must identify the unindexed dex ID'
+  );
+
+  assert.throws(
+    () => SceneCppExporter.export(badPkmnScene),
+    /validation failed|unindexed or non-existent Pokemon dex ID/,
+    'Export must reject unindexed Pokémon dex ID'
+  );
+});
+
+test('BETA-UI-3.21: Valid registered local assets resolve cleanly and export with valid provenance', () => {
+  // Register verified local asset
+  assetResolver.registerAsset({
+    id: 'custom_skin_local',
+    name: 'Custom HUD Skin',
+    category: 'ui',
+    sourcePath: 'assets/skins/hud_skin.png',
+    dimensions: { width: 320, height: 64 },
+    target3DS: {
+      t3xPath: 'romfs/ui/custom_skin_local.t3x',
+      format: 'RGBA4444'
+    }
+  });
+
+  const localAssetScene = {
+    id: 'LocalAssetScene',
+    durationFrames: 60,
+    fps: 60,
+    top: { width: 400, height: 240 },
+    bottom: { width: 320, height: 240 },
+    nodes: [
+      {
+        id: 'hud_panel',
+        type: 'Image',
+        screen: 'bottom',
+        x: 0,
+        y: 176,
+        width: 320,
+        height: 64,
+        properties: { asset: 'custom_skin_local' }
+      }
+    ]
+  };
+
+  const val = SceneValidator.validate(localAssetScene);
+  assert.strictEqual(val.valid, true, 'Scene with registered local asset must pass validation');
+
+  const exportResult = SceneCppExporter.export(localAssetScene);
+  assert.ok(exportResult, 'Export must succeed');
+  const exportedAsset = exportResult.manifest.assets.find(a => a.assetId === 'custom_skin_local');
+  assert.ok(exportedAsset, 'Exported manifest must contain registered local asset');
+  assert.strictEqual(exportedAsset.romfsPath, 'romfs/ui/custom_skin_local.t3x', 'Must use exact registered target3DS t3xPath');
+});
+
+test('BETA-UI-3.22: Uint16 boundary contract: Validates uint16 boundary (<= 65535) and rejects overflow (> 65535)', () => {
+  const boundaryScene = {
+    id: 'BoundaryScene',
+    durationFrames: 65535, // Max uint16_t
+    fps: 60,
+    top: { width: 400, height: 240 },
+    bottom: { width: 320, height: 240 },
+    nodes: [
+      {
+        id: 'test_node',
+        type: 'PixelText',
+        screen: 'top',
+        properties: { text: 'Boundary Test' }
+      }
+    ],
+    tracks: [
+      {
+        id: 'boundary_track',
+        targetNodeId: 'test_node',
+        propertyPath: 'transform.x',
+        keyframes: [
+          { frame: 0, value: 0 },
+          { frame: 65535, value: 400 } // Max uint16_t frame
+        ]
+      }
+    ],
+    markers: [
+      { frame: 65535, name: 'EndMarker', type: 'Loop' }
+    ]
+  };
+
+  const valBoundary = SceneValidator.validate(boundaryScene);
+  assert.strictEqual(valBoundary.valid, true, 'Scene at uint16 boundary (65535) must pass validation');
+
+  // Test overflows:
+  // 1. durationFrames overflow
+  const ovfDuration = { ...boundaryScene, id: 'Ovf1', durationFrames: 65536 };
+  const valOvf1 = SceneValidator.validate(ovfDuration);
+  assert.strictEqual(valOvf1.valid, false);
+  assert.ok(valOvf1.errors.some(e => e.includes('exceeds uint16_t maximum')));
+
+  // 2. fps overflow
+  const ovfFps = { ...boundaryScene, id: 'Ovf2', fps: 65536 };
+  const valOvf2 = SceneValidator.validate(ovfFps);
+  assert.strictEqual(valOvf2.valid, false);
+  assert.ok(valOvf2.errors.some(e => e.includes('fps') && e.includes('exceeds uint16_t maximum')));
+
+  // 3. keyframe frame overflow
+  const ovfKf = {
+    ...boundaryScene,
+    id: 'Ovf3',
+    tracks: [
+      {
+        id: 't_ovf',
+        targetNodeId: 'test_node',
+        propertyPath: 'transform.x',
+        keyframes: [{ frame: 65536, value: 10 }]
+      }
+    ]
+  };
+  const valOvf3 = SceneValidator.validate(ovfKf);
+  assert.strictEqual(valOvf3.valid, false);
+  assert.ok(valOvf3.errors.some(e => e.includes('exceeds uint16_t maximum')));
+
+  // 4. marker frame overflow
+  const ovfMarker = {
+    ...boundaryScene,
+    id: 'Ovf4',
+    markers: [{ frame: 65536, name: 'BadMarker' }]
+  };
+  const valOvf4 = SceneValidator.validate(ovfMarker);
+  assert.strictEqual(valOvf4.valid, false);
+  assert.ok(valOvf4.errors.some(e => e.includes('Marker') && e.includes('exceeds uint16_t maximum')));
+
+  // 5. audioCue frame overflow
+  const ovfCue = {
+    ...boundaryScene,
+    id: 'Ovf5',
+    audioCues: [{ frame: 65536, asset: 'bgm_theme' }]
+  };
+  const valOvf5 = SceneValidator.validate(ovfCue);
+  assert.strictEqual(valOvf5.valid, false);
+  assert.ok(valOvf5.errors.some(e => e.includes('Audio cue') && e.includes('exceeds uint16_t maximum')));
+});
+
+test('BETA-UI-3.23: Validator ↔ Exporter contract: Rejects pivotX, pivotY, and uncontracted properties without silent fallback', () => {
+  const baseScene = {
+    id: 'ContractScene',
+    durationFrames: 60,
+    fps: 60,
+    top: { width: 400, height: 240 },
+    bottom: { width: 320, height: 240 },
+    nodes: [{ id: 'target_node', type: 'PixelText', screen: 'top' }]
+  };
+
+  // 1. pivotX must be rejected
+  const pivotXScene = {
+    ...baseScene,
+    id: 'PivotXScene',
+    tracks: [{ targetNodeId: 'target_node', propertyPath: 'transform.pivotX', keyframes: [{ frame: 0, value: 0 }] }]
+  };
+  const valPivotX = SceneValidator.validate(pivotXScene);
+  assert.strictEqual(valPivotX.valid, false);
+  assert.ok(valPivotX.errors.some(e => e.includes('pivotX') && e.includes('not supported in the C++ runtime contract')));
+
+  // 2. pivotY must be rejected
+  const pivotYScene = {
+    ...baseScene,
+    id: 'PivotYScene',
+    tracks: [{ targetNodeId: 'target_node', propertyPath: 'transform.pivotY', keyframes: [{ frame: 0, value: 0 }] }]
+  };
+  const valPivotY = SceneValidator.validate(pivotYScene);
+  assert.strictEqual(valPivotY.valid, false);
+  assert.ok(valPivotY.errors.some(e => e.includes('pivotY') && e.includes('not supported in the C++ runtime contract')));
+
+  // 3. arbitrary property without C++ contract must be rejected
+  const customPropScene = {
+    ...baseScene,
+    id: 'CustomPropScene',
+    tracks: [{ targetNodeId: 'target_node', propertyPath: 'properties.arbitraryField', keyframes: [{ frame: 0, value: 123 }] }]
+  };
+  const valCustom = SceneValidator.validate(customPropScene);
+  assert.strictEqual(valCustom.valid, false);
+  assert.ok(valCustom.errors.some(e => e.includes('unsupported propertyPath') && e.includes('without a C++ export contract')));
+
+  // 4. Exporter must throw rather than silently producing PropertyId::None
+  assert.throws(
+    () => SceneCppExporter.export(customPropScene),
+    /validation failed|has no C\+\+ export contract/
+  );
+});
+
+test('BETA-UI-3.24: Export failure is strictly deterministic', () => {
+  const badScene = {
+    id: 'DeterministicFailScene',
+    durationFrames: 60,
+    fps: 60,
+    top: { width: 500, height: 300 }, // Invalid
+    bottom: { width: 320, height: 240 },
+    nodes: [{ id: 'n1', type: 'PixelText', screen: 'top' }]
+  };
+
+  let msg1 = '';
+  let msg2 = '';
+  let msg3 = '';
+
+  try { SceneCppExporter.export(badScene); } catch (e) { msg1 = e.message; }
+  try { SceneCppExporter.export(badScene); } catch (e) { msg2 = e.message; }
+  try { SceneCppExporter.export(badScene); } catch (e) { msg3 = e.message; }
+
+  assert.ok(msg1.length > 0, 'Error message must not be empty');
+  assert.strictEqual(msg1, msg2, 'Error message must be identical in run 2');
+  assert.strictEqual(msg1, msg3, 'Error message must be identical in run 3');
+});
+
 
 async function runAllTests() {
   for (const { name, fn } of testQueue) {

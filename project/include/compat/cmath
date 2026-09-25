@@ -1,0 +1,19 @@
+#pragma once
+
+namespace std {
+inline float round(float x) {
+    return (x >= 0.0f) ? (float)(int)(x + 0.5f) : (float)(int)(x - 0.5f);
+}
+
+inline float fabs(float x) {
+    return (x < 0.0f) ? -x : x;
+}
+
+inline float fmax(float a, float b) {
+    return (a > b) ? a : b;
+}
+
+inline float fmin(float a, float b) {
+    return (a < b) ? a : b;
+}
+}

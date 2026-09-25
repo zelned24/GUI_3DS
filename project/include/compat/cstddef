@@ -1,0 +1,5 @@
+#pragma once
+#include "cstdint"
+
+typedef __SIZE_TYPE__ size_t;
+typedef decltype(nullptr) nullptr_t;

@@ -61,15 +61,15 @@ export class TimelineEvaluator {
    * Injects evaluated value into the node evaluation dictionary.
    */
   static _applyPropertyPath(targetState, path, value) {
-    if (path.startsWith('transform.')) {
-      const prop = path.replace('transform.', '');
-      targetState.transform[prop] = value;
-      return;
-    }
-
     if (path === 'opacity' || path === 'transform.opacity') {
       targetState.opacity = value;
       targetState.transform.opacity = value;
+      return;
+    }
+
+    if (path.startsWith('transform.')) {
+      const prop = path.replace('transform.', '');
+      targetState.transform[prop] = value;
       return;
     }
 

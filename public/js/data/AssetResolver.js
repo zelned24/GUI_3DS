@@ -175,12 +175,58 @@ export class AssetResolver {
   }
 
   /**
-   * Retrieves an asset by ID.
+   * Resolves an asset by ID from built-in catalog or user registered assets.
+   * @param {string} id 
+   * @returns {Object|null}
+   */
+  resolve(id) {
+    if (!id || typeof id !== 'string') return null;
+    return this.catalog.get(id) || null;
+  }
+
+  /**
+   * Retrieves an asset by ID (alias for resolve).
    * @param {string} id 
    * @returns {Object|null}
    */
   getAsset(id) {
-    return this.catalog.get(id) || null;
+    return this.resolve(id);
+  }
+
+  /**
+   * Registers a verified custom or local asset with strict provenance metadata.
+   * @param {Object} asset
+   * @returns {boolean}
+   */
+  registerAsset(asset) {
+    if (!asset || !asset.id || typeof asset.id !== 'string') {
+      throw new Error('Invalid asset registration: must have a non-empty string id');
+    }
+    if (!asset.sourcePath || typeof asset.sourcePath !== 'string') {
+      throw new Error(`Invalid asset registration for "${asset.id}": missing sourcePath`);
+    }
+    if (!asset.target3DS?.t3xPath || typeof asset.target3DS.t3xPath !== 'string') {
+      throw new Error(`Invalid asset registration for "${asset.id}": missing target3DS.t3xPath`);
+    }
+
+    this.catalog.set(asset.id, {
+      id: asset.id,
+      name: asset.name || asset.id,
+      category: asset.category || 'ui',
+      defaultComponent: asset.defaultComponent || 'Image',
+      sourcePath: asset.sourcePath,
+      format: asset.format || 'PNG',
+      dimensions: asset.dimensions || { width: 64, height: 64 },
+      target3DS: {
+        format: asset.target3DS.format || 'RGBA4444',
+        t3xPath: asset.target3DS.t3xPath,
+        tex3dsFlags: asset.target3DS.tex3dsFlags || '-f rgba4444 -z auto'
+      },
+      repository: asset.repository || 'local',
+      revision: asset.revision || 'HEAD',
+      isLocal: true
+    });
+    return true;
   }
 
   /**

@@ -16,6 +16,4 @@ struct AssetEntry {
 extern const AssetEntry g_SceneAssets[];
 extern const size_t g_SceneAssetCount;
 
-const AssetEntry* findSceneAsset(const char* assetId);
-
 } // namespace Citro2D

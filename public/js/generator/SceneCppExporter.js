@@ -1,6 +1,6 @@
 import { SceneValidator } from './SceneValidator.js';
 import { InterpolationTypes } from '../animation/Keyframe.js';
-import { AssetResolver } from '../data/AssetResolver.js';
+import { AssetResolver, assetResolver as defaultAssetResolver } from '../data/AssetResolver.js';
 import { PokemonSpriteResolver } from '../data/PokemonSpriteResolver.js';
 
 /**
@@ -99,6 +99,22 @@ export class SceneCppExporter {
     return '0xFFFFFFFF';
   }
 
+  /**
+   * Formats a number as a valid C++ float literal (e.g. 1.0f, 0.0f, 12.5f).
+   * Prevents invalid suffixes on integer constants (e.g. 1f).
+   * @param {number} val 
+   * @returns {string} E.g. "1.0f", "12.5f"
+   */
+  static formatFloat(val) {
+    const num = Number(val || 0);
+    if (!Number.isFinite(num)) return '0.0f';
+    const str = num.toString();
+    if (str.includes('.')) {
+      return `${str}f`;
+    }
+    return `${str}.0f`;
+  }
+
   static escapeCppString(str) {
     return String(str ?? '')
       .replace(/\\/g, '\\\\')
@@ -128,14 +144,14 @@ export class SceneCppExporter {
    */
   static export(scene, options = {}) {
     // 1. Strict pre-export validation
-    SceneValidator.assertValid(scene);
+    SceneValidator.assertValid(scene, options);
 
     const sceneRaw = typeof scene.toJSON === 'function' ? scene.toJSON() : scene;
     const sceneId = sceneRaw.id;
     const className = this.sanitizeClassName(sceneId);
 
     // 2. Resolve referenced assets deterministically
-    const assetManifest = this._buildAssetManifest(sceneRaw);
+    const assetManifest = this._buildAssetManifest(sceneRaw, options);
 
     // 3. Build normalized deterministic scene export model
     const exportModel = this._buildExportModel(sceneRaw, assetManifest);
@@ -145,10 +161,14 @@ export class SceneCppExporter {
     const dataCpp = this._generateSceneDataCpp(exportModel);
     const assetsHpp = this._generateSceneAssetsHpp(assetManifest);
     const assetsCpp = this._generateSceneAssetsCpp(assetManifest);
+    const manifestHpp = this._generateAssetManifestHpp(assetManifest);
+    const manifestCpp = this._generateAssetManifestCpp(assetManifest);
     const timelineHpp = this._generateSceneTimelineHpp();
     const timelineCpp = this._generateSceneTimelineCpp();
-    const sceneHpp = this._generateSceneClassHpp(className, exportModel);
-    const sceneCpp = this._generateSceneClassCpp(className, exportModel);
+    const sceneClassHpp = this._generateSceneClassHpp(className, exportModel);
+    const sceneClassCpp = this._generateSceneClassCpp(className, exportModel);
+    const sceneHpp = this._generateSceneHpp(className);
+    const sceneCpp = this._generateSceneCpp(className);
     const manifestJson = JSON.stringify(assetManifest, null, 2);
 
     const files = {
@@ -156,14 +176,14 @@ export class SceneCppExporter {
       'generated/src/screens/SceneData.cpp': dataCpp,
       'generated/include/screens/SceneAssets.hpp': assetsHpp,
       'generated/src/screens/SceneAssets.cpp': assetsCpp,
-      'generated/include/screens/AssetManifest.hpp': assetsHpp,
-      'generated/src/screens/AssetManifest.cpp': assetsCpp,
+      'generated/include/screens/AssetManifest.hpp': manifestHpp,
+      'generated/src/screens/AssetManifest.cpp': manifestCpp,
       'generated/include/screens/SceneTimeline.hpp': timelineHpp,
       'generated/src/screens/SceneTimeline.cpp': timelineCpp,
       'generated/include/screens/Scene.hpp': sceneHpp,
       'generated/src/screens/Scene.cpp': sceneCpp,
-      [`generated/include/screens/${className}.hpp`]: sceneHpp,
-      [`generated/src/screens/${className}.cpp`]: sceneCpp,
+      [`generated/include/screens/${className}.hpp`]: sceneClassHpp,
+      [`generated/src/screens/${className}.cpp`]: sceneClassCpp,
       'generated/SceneManifest.json': manifestJson
     };
 
@@ -172,12 +192,14 @@ export class SceneCppExporter {
       className,
       headerPath: `generated/include/screens/${className}.hpp`,
       sourcePath: `generated/src/screens/${className}.cpp`,
-      hpp: sceneHpp,
-      cpp: sceneCpp,
+      hpp: sceneClassHpp,
+      cpp: sceneClassCpp,
       dataHpp,
       dataCpp,
       assetsHpp,
       assetsCpp,
+      manifestHpp,
+      manifestCpp,
       timelineHpp,
       timelineCpp,
       manifestJson,
@@ -191,9 +213,9 @@ export class SceneCppExporter {
    * Builds deterministic Asset Manifest containing only referenced scene assets.
    * @param {Object} scene 
    */
-  static _buildAssetManifest(scene) {
-    const assetResolver = new AssetResolver();
-    const pokemonResolver = new PokemonSpriteResolver();
+  static _buildAssetManifest(scene, options = {}) {
+    const assetResolver = options.assetResolver || defaultAssetResolver;
+    const pokemonResolver = options.pokemonResolver || new PokemonSpriteResolver();
     const assetMap = new Map();
 
     const rawNodes = scene.nodes || scene.components || [];
@@ -202,29 +224,19 @@ export class SceneCppExporter {
       if (node.type === 'Image' || node.type === 'ImageNode') {
         const assetId = node.properties?.asset;
         if (assetId && !assetMap.has(assetId)) {
-          const resolved = assetResolver.getAsset(assetId);
-          if (resolved) {
-            assetMap.set(assetId, {
-              assetId,
-              romfsPath: resolved.target3DS?.t3xPath || `romfs/gfx/${assetId}.t3x`,
-              format: resolved.target3DS?.format || 'RGB565',
-              width: resolved.dimensions?.width || node.width || 400,
-              height: resolved.dimensions?.height || node.height || 240,
-              sourceRepository: resolved.repository || 'pokerogue-assets',
-              sourceRevision: resolved.revision || '056a1f4'
-            });
-          } else {
-            // Fallback for valid user assets
-            assetMap.set(assetId, {
-              assetId,
-              romfsPath: `romfs/gfx/${assetId}.t3x`,
-              format: 'RGB565',
-              width: node.width || 400,
-              height: node.height || 240,
-              sourceRepository: 'local',
-              sourceRevision: 'HEAD'
-            });
+          const resolved = assetResolver.resolve(assetId);
+          if (!resolved) {
+            throw new Error(`Cannot export scene: unresolvable asset "${assetId}". Assets must exist in AssetResolver catalog or be registered local assets; fictitious fallback paths are prohibited.`);
           }
+          assetMap.set(assetId, {
+            assetId,
+            romfsPath: resolved.target3DS?.t3xPath,
+            format: resolved.target3DS?.format || 'RGB565',
+            width: resolved.dimensions?.width || node.width || 400,
+            height: resolved.dimensions?.height || node.height || 240,
+            sourceRepository: resolved.repository || 'pokerogue-assets',
+            sourceRevision: resolved.revision || '056a1f4'
+          });
         }
       }
 
@@ -233,9 +245,12 @@ export class SceneCppExporter {
         const assetId = `pokemon_sprite_${dexId}_${node.properties?.facing || 'front'}`;
         if (!assetMap.has(assetId)) {
           const pkmnRes = pokemonResolver.resolvePokemonSprite(dexId);
-          const t3x = pkmnRes?.target3DS?.t3xPath || `romfs/sprites/pokemon/${dexId}.t3x`;
-          const fmt = pkmnRes?.target3DS?.format || 'RGBA4444';
-          const dims = pkmnRes?.dimensions || { width: node.width || 96, height: node.height || 96 };
+          if (!pkmnRes || !pkmnRes.exists) {
+            throw new Error(`Cannot export scene: unindexed or non-existent Pokémon dex ID #${dexId}. Fictitious fallback paths are prohibited.`);
+          }
+          const t3x = pkmnRes.target3DS?.t3xPath;
+          const fmt = pkmnRes.target3DS?.format || 'RGBA4444';
+          const dims = pkmnRes.dimensions || { width: node.width || 96, height: node.height || 96 };
 
           assetMap.set(assetId, {
             assetId,
@@ -243,8 +258,8 @@ export class SceneCppExporter {
             format: fmt,
             width: dims.width,
             height: dims.height,
-            sourceRepository: pkmnRes?.sourceRepository || 'pokerogue-assets',
-            sourceRevision: pkmnRes?.sourceRevision || '056a1f4'
+            sourceRepository: pkmnRes.sourceRepository || 'pokerogue-assets',
+            sourceRevision: pkmnRes.sourceRevision || '056a1f4'
           });
         }
       }
@@ -355,7 +370,10 @@ export class SceneCppExporter {
     });
 
     const tracks = rawTracks.map(t => {
-      const propInfo = this.PROPERTY_MAP[t.propertyPath] || { id: 0, name: 'None' };
+      const propInfo = this.PROPERTY_MAP[t.propertyPath];
+      if (!propInfo || propInfo.id === 0) {
+        throw new Error(`Cannot export track targeting "${t.targetNodeId}": property "${t.propertyPath}" has no C++ export contract.`);
+      }
       const nodeHash = this.fnv1a32(t.targetNodeId);
       const rawKfs = [...(t.keyframes || [])];
 
@@ -570,7 +588,7 @@ extern const SceneDefinition g_SceneDefinition;
       } else {
         lines.push(`static const SceneKeyframe ${varName}[] = {`);
         for (const kf of track.keyframes) {
-          const valStr = Number.isInteger(kf.value) ? `${kf.value}.0f` : `${kf.value}f`;
+          const valStr = this.formatFloat(kf.value);
           lines.push(`    { ${kf.frame}, ${valStr}, InterpolationType::${kf.interpolationName} },`);
         }
         lines.push('};');
@@ -616,8 +634,8 @@ extern const SceneDefinition g_SceneDefinition;
 
         lines.push('    {');
         lines.push(`        ${hexHash}, "${this.escapeCppString(node.id)}", ${typeEnum}, ${screenEnum}, ${node.parentIndex},`);
-        lines.push(`        ${node.x}.0f, ${node.y}.0f, ${node.width}.0f, ${node.height}.0f,`);
-        lines.push(`        ${node.scaleX}f, ${node.scaleY}f, ${node.rotation}f, ${node.opacity}f,`);
+        lines.push(`        ${this.formatFloat(node.x)}, ${this.formatFloat(node.y)}, ${this.formatFloat(node.width)}, ${this.formatFloat(node.height)},`);
+        lines.push(`        ${this.formatFloat(node.scaleX)}, ${this.formatFloat(node.scaleY)}, ${this.formatFloat(node.rotation)}, ${this.formatFloat(node.opacity)},`);
         lines.push(`        ${node.visible ? 'true' : 'false'}, ${node.zIndex},`);
         lines.push(`        ${assetStr}, ${node.flipX ? 'true' : 'false'}, ${node.flipY ? 'true' : 'false'},`);
         lines.push(`        ${node.tintColor}, ${textStr}`);
@@ -651,7 +669,7 @@ extern const SceneDefinition g_SceneDefinition;
     } else {
       lines.push('static const SceneAudioCue s_audioCues[] = {');
       for (const c of model.audioCues) {
-        lines.push(`    { ${c.frame}, "${this.escapeCppString(c.asset)}", ${c.volume}f, ${c.channel} },`);
+        lines.push(`    { ${c.frame}, "${this.escapeCppString(c.asset)}", ${this.formatFloat(c.volume)}, ${c.channel} },`);
       }
       lines.push('};');
     }
@@ -683,7 +701,7 @@ extern const SceneDefinition g_SceneDefinition;
     return lines.join('\n');
   }
 
-  static _generateSceneAssetsHpp(manifest) {
+  static _generateAssetManifestHpp(manifest) {
     return `#pragma once
 
 #include <cstdint>
@@ -702,16 +720,13 @@ struct AssetEntry {
 extern const AssetEntry g_SceneAssets[];
 extern const size_t g_SceneAssetCount;
 
-const AssetEntry* findSceneAsset(const char* assetId);
-
 } // namespace Citro2D
 `;
   }
 
-  static _generateSceneAssetsCpp(manifest) {
+  static _generateAssetManifestCpp(manifest) {
     const lines = [];
-    lines.push('#include "screens/SceneAssets.hpp"');
-    lines.push('#include <cstring>');
+    lines.push('#include "screens/AssetManifest.hpp"');
     lines.push('');
     lines.push('namespace Citro2D {');
     lines.push('');
@@ -730,6 +745,32 @@ const AssetEntry* findSceneAsset(const char* assetId);
     }
 
     lines.push('');
+    lines.push('} // namespace Citro2D');
+    lines.push('');
+
+    return lines.join('\n');
+  }
+
+  static _generateSceneAssetsHpp(manifest) {
+    return `#pragma once
+
+#include "screens/AssetManifest.hpp"
+
+namespace Citro2D {
+
+const AssetEntry* findSceneAsset(const char* assetId);
+
+} // namespace Citro2D
+`;
+  }
+
+  static _generateSceneAssetsCpp(manifest) {
+    const lines = [];
+    lines.push('#include "screens/SceneAssets.hpp"');
+    lines.push('#include <cstring>');
+    lines.push('');
+    lines.push('namespace Citro2D {');
+    lines.push('');
     lines.push('const AssetEntry* findSceneAsset(const char* assetId) {');
     lines.push('    if (!assetId) return nullptr;');
     lines.push('    for (size_t i = 0; i < g_SceneAssetCount; ++i) {');
@@ -745,6 +786,7 @@ const AssetEntry* findSceneAsset(const char* assetId);
 
     return lines.join('\n');
   }
+
 
   static _generateSceneTimelineHpp() {
     return `#pragma once
@@ -1204,6 +1246,34 @@ void ${className}::renderNode(Renderer2D& renderer, uint32_t nodeIndex) {
             break;
     }
 }
+`;
+  }
+
+  static _generateSceneHpp(className) {
+    return `#pragma once
+
+#include "screens/${className}.hpp"
+
+namespace Citro2D {
+
+using CurrentScene = ::${className};
+Screen* createScene();
+
+} // namespace Citro2D
+`;
+  }
+
+  static _generateSceneCpp(className) {
+    return `#include "screens/Scene.hpp"
+
+namespace Citro2D {
+
+Screen* createScene() {
+    static ${className} s_scene;
+    return &s_scene;
+}
+
+} // namespace Citro2D
 `;
   }
 

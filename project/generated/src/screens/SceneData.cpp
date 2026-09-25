@@ -39,7 +39,7 @@ static const SceneNodeData s_nodes[] = {
     {
         0x7DBFC222, "bg_arena", NodeType::Image, ScreenTarget::Top, -1,
         0.0f, 0.0f, 400.0f, 240.0f,
-        1f, 1f, 0f, 1f,
+        1.0f, 1.0f, 0.0f, 1.0f,
         true, 1,
         "bg_arena_plains", false, false,
         0xFFFFFFFF, nullptr
@@ -47,7 +47,7 @@ static const SceneNodeData s_nodes[] = {
     {
         0x0020114C, "pikachu_sprite", NodeType::PokemonSprite, ScreenTarget::Top, -1,
         320.0f, 60.0f, 112.0f, 112.0f,
-        1f, 1f, 0f, 1f,
+        1.0f, 1.0f, 0.0f, 1.0f,
         true, 2,
         "pokemon_sprite_25_front", false, false,
         0xFFFFFFFF, nullptr
@@ -55,7 +55,7 @@ static const SceneNodeData s_nodes[] = {
     {
         0x01CE1A28, "title_banner", NodeType::Text, ScreenTarget::Top, -1,
         20.0f, 20.0f, 360.0f, 32.0f,
-        1f, 1f, 0f, 1f,
+        1.0f, 1.0f, 0.0f, 1.0f,
         true, 3,
         nullptr, false, false,
         0xFFFFFFFF, "WILD PIKACHU APPEARED!"
