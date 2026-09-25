@@ -1,4 +1,5 @@
 import { Transform } from './Transform.js';
+import { globalRNG } from './DeterministicRNG.js';
 
 /**
  * UINode - Hierarchical scene node representing any element in the 3DS UI Studio.
@@ -10,7 +11,7 @@ export class UINode {
    * @param {Object} data 
    */
   constructor(data = {}) {
-    this.id = data.id || `node_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+    this.id = data.id || globalRNG.nextId('node');
     this.name = data.name || this.id;
     this.type = data.type || 'UINode';
     this.screen = data.screen || 'top'; // 'top' | 'bottom'

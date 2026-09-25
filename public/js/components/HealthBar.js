@@ -89,24 +89,4 @@ export class HealthBar extends BaseComponent {
       ctx.fillText('HP', 4, Math.floor(h / 2));
     }
   }
-
-  exportCppRender(emitter, screenVar = 'top') {
-    const { currentHp, maxHp, highColor, medColor, lowColor, backgroundColor, borderColor } = this.properties;
-    const toHex = (c) => emitter.hexColorToC2D(c);
-
-    emitter.line(`// HealthBar: ${this.id}`);
-    emitter.line(`{`);
-    emitter.indent();
-    emitter.line(`float ratio = (float)(${currentHp}) / (float)(${Math.max(1, maxHp)});`);
-    emitter.line(`u32 hpColor = ratio > 0.5f ? ${toHex(highColor || '#48bb78')} : (ratio > 0.2f ? ${toHex(medColor || '#ecc94b')} : ${toHex(lowColor || '#f56565')});`);
-    emitter.line(`C2D_DrawRectSolid(${this.x}f, ${this.y}f, 0.5f, ${this.width}f, ${this.height}f, ${toHex(borderColor || '#4a5568')});`);
-    emitter.line(`C2D_DrawRectSolid(${this.x + 1}f, ${this.y + 1}f, 0.51f, ${this.width - 2}f, ${this.height - 2}f, ${toHex(backgroundColor || '#1a202c')});`);
-    emitter.line(`if (ratio > 0.0f) {`);
-    emitter.indent();
-    emitter.line(`C2D_DrawRectSolid(${this.x + 1}f, ${this.y + 1}f, 0.52f, (${this.width - 2}f) * ratio, ${this.height - 2}f, hpColor);`);
-    emitter.unindent();
-    emitter.line(`}`);
-    emitter.unindent();
-    emitter.line(`}`);
-  }
 }

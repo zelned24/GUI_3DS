@@ -277,10 +277,10 @@ export class PreviewRuntime {
   log(msg) {
     const logsEl = this.modal.querySelector('#preview_console_logs');
     if (!logsEl) return;
-    const time = new Date().toLocaleTimeString();
+    this.logCounter = (this.logCounter || 0) + 1;
     const entry = document.createElement('div');
     entry.className = 'log-entry';
-    entry.textContent = `[${time}] ${msg}`;
+    entry.textContent = `[Log #${this.logCounter}] ${msg}`;
     logsEl.appendChild(entry);
     logsEl.scrollTop = logsEl.scrollHeight;
   }

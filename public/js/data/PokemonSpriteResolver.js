@@ -1,119 +1,100 @@
+import { POKEROGUE_REPOSITORIES, PokerogueSource } from './PokerogueSource.js';
+
 /**
- * public/js/data/PokemonSpriteResolver.js
- * 
- * FASE 7: Asset Resolution for Vertical Slice
- * Resolves upstream assets strictly answering:
- * 1. ¿Qué asset corresponde a esta especie?
- * 2. ¿De dónde proviene?
- * 3. ¿Qué revisión lo produjo?
- * 4. ¿Existe?
- * 5. ¿Qué formato tiene?
- * No invented paths: targets real upstream TexturePacker atlases from pagefaultgames/pokerogue-assets.
+ * PokemonSpriteResolver - Resolves real sprite and atlas assets from pokerogue-assets.
+ * Answers the 5 core asset provenance questions without inventing fictitious paths:
+ * 1. Which asset corresponds?
+ * 2. Where does it originate?
+ * 3. What revision produced it?
+ * 4. Does it physically exist?
+ * 5. What format and dimensions does it have?
  */
-
-import { POKEROGUE_UPSTREAM_CONFIG } from './PokerogueSource.js';
-
-// Verified upstream assets from pokerogue-assets (branch beta, commit 056a1f408f26a3be4fef243f7462cb43608c7928)
-const UPSTREAM_VERIFIED_ASSETS = {
-  25: {
-    species: 'pikachu',
-    jsonPath: 'images/pokemon/25.json',
-    pngPath: 'images/pokemon/25.png',
-    jsonSha: '8550ea7f2e3b4560a3ef4d2a604d647032bae928',
-    pngSha: '2ec03e93ae89b00da102ef8e37eb08ed7327f31d',
-    format: 'TexturePacker JSON + PNG',
-    colorFormat: 'RGBA8888',
-    dimensions: { w: 315, h: 315 }
-  },
-  76: {
-    species: 'golem',
-    jsonPath: 'images/pokemon/76.json',
-    pngPath: 'images/pokemon/76.png',
-    jsonSha: '6942ad5bb4560a3ef4d2a604d647032bae928a',
-    pngSha: 'f3f2ea7ee8f04e5c41a8178c639fb2782f80bcd6',
-    format: 'TexturePacker JSON + PNG',
-    colorFormat: 'RGBA8888',
-    dimensions: { w: 384, h: 384 }
-  }
-};
-
-const NAME_TO_ID = {
-  pikachu: 25,
-  golem: 76
-};
-
 export class PokemonSpriteResolver {
-  constructor(assetConfig = POKEROGUE_UPSTREAM_CONFIG.assets) {
-    this.assetConfig = assetConfig;
+  constructor(repository = null) {
+    this.repository = repository;
+    this.repoConfig = POKEROGUE_REPOSITORIES['pokerogue-assets'];
+
+    // Known verified metadata registry from pokerogue-assets (commit 056a1f408f26a3be4fef243f7462cb43608c7928)
+    this.verifiedRegistry = new Map([
+      [25, {
+        speciesId: 25,
+        name: 'Pikachu',
+        jsonPath: 'images/pokemon/25.json',
+        imagePath: 'images/pokemon/25.png',
+        jsonHash: '8550ea7f2e3b4560a3ef4d2a604d647032bae928',
+        format: 'TexturePacker JSON + PNG',
+        colorDepth: 'RGBA8888',
+        dimensions: { width: 315, height: 315 },
+        target3DS: {
+          format: 'RGBA4444',
+          t3xPath: 'romfs/sprites/pokemon/25.t3x',
+          tex3dsFlags: '-f rgba4444 -z auto'
+        }
+      }],
+      [76, {
+        speciesId: 76,
+        name: 'Golem',
+        jsonPath: 'images/pokemon/76.json',
+        imagePath: 'images/pokemon/76.png',
+        jsonHash: '6942ad5bb4560a3ef4d2a604d647032bae928a',
+        format: 'TexturePacker JSON + PNG',
+        colorDepth: 'RGBA8888',
+        dimensions: { width: 384, height: 384 },
+        target3DS: {
+          format: 'RGBA4444',
+          t3xPath: 'romfs/sprites/pokemon/76.t3x',
+          tex3dsFlags: '-f rgba4444 -z auto'
+        }
+      }]
+    ]);
   }
 
   /**
-   * Directly answers the 5 fundamental questions for any species asset:
-   * 1. asset - file path and raw URL
-   * 2. origin - source repository URL
-   * 3. revision - commit sha producing it
-   * 4. exists - boolean existence verification
-   * 5. format - image / atlas format
+   * Resolves the asset record for a given Pokémon national dex ID.
+   * Answers the 5 core questions and reports failures without inventing fictitious paths.
+   * @param {number|string} speciesId 
+   * @returns {Object}
    */
-  resolveAssetReport(speciesIdOrName) {
-    let dexId = Number(speciesIdOrName);
-    if (isNaN(dexId) && typeof speciesIdOrName === 'string') {
-      dexId = NAME_TO_ID[speciesIdOrName.toLowerCase()] || 0;
-    }
+  resolvePokemonSprite(speciesId) {
+    const numId = Number(speciesId);
+    const entry = this.verifiedRegistry.get(numId);
 
-    const verified = UPSTREAM_VERIFIED_ASSETS[dexId];
-    const repo = this.assetConfig.repository;
-    const revision = this.assetConfig.revision;
-
-    if (!verified) {
+    if (!entry) {
       return {
-        speciesQuery: speciesIdOrName,
-        nationalDexId: dexId,
         exists: false,
-        error: `Asset for species "${speciesIdOrName}" (Dex #${dexId}) does not exist in upstream verified registry.`,
-        assetPath: null,
-        assetUrl: null,
-        sourceRepository: repo,
-        sourceRevision: revision,
-        format: null
+        speciesId: numId,
+        error: `Asset for species #${numId} is not indexed or does not exist in pokerogue-assets`,
+        sourceRepository: this.repoConfig.url,
+        sourceRevision: this.repoConfig.revision,
+        assetPaths: null,
+        target3DS: null
       };
     }
 
-    const rawUrl = `${this.assetConfig.rawBase}/${revision}/${verified.pngPath}`;
-    const jsonUrl = `${this.assetConfig.rawBase}/${revision}/${verified.jsonPath}`;
-
     return {
-      speciesQuery: speciesIdOrName,
-      nationalDexId: dexId,
       exists: true,
-      asset: {
-        jsonPath: verified.jsonPath,
-        pngPath: verified.pngPath,
-        jsonUrl,
-        pngUrl: rawUrl,
-        dimensions: verified.dimensions
+      speciesId: numId,
+      name: entry.name,
+      sourceRepository: this.repoConfig.url,
+      sourceRevision: this.repoConfig.revision,
+      assetPaths: {
+        json: entry.jsonPath,
+        image: entry.imagePath,
+        rawJsonUrl: PokerogueSource.buildRawUrl('pokerogue-assets', entry.jsonPath),
+        rawImageUrl: PokerogueSource.buildRawUrl('pokerogue-assets', entry.imagePath)
       },
-      origin: repo,
-      revision: revision,
-      format: verified.format,
-      colorFormat: verified.colorFormat,
-      target3DS: {
-        compiledPath: `romfs/sprites/pokemon/${dexId}.t3x`,
-        runtimeFormat: 'GPU_RGBA8 / Citro2D C2D_SpriteSheet'
-      }
+      jsonHash: entry.jsonHash,
+      format: entry.format,
+      colorDepth: entry.colorDepth,
+      dimensions: { ...entry.dimensions },
+      target3DS: { ...entry.target3DS }
     };
   }
 
-  resolveSprite(speciesId) {
-    const report = this.resolveAssetReport(speciesId);
-    if (!report.exists) {
-      return null;
-    }
-    return {
-      atlasPath: report.target3DS.compiledPath,
-      pngUrl: report.asset.pngUrl,
-      jsonUrl: report.asset.jsonUrl,
-      format: report.format
-    };
+  /**
+   * Returns list of all verified species IDs in the asset resolver.
+   */
+  getIndexedSpeciesIds() {
+    return Array.from(this.verifiedRegistry.keys());
   }
 }

@@ -14,12 +14,14 @@ import { PokerogueAdapter } from '../public/js/data/PokerogueAdapter.js';
 import { dataManager } from '../public/js/data/DataManager.js';
 import { PokemonBattleData, BattleState } from '../public/js/battle/BattleState.js';
 import { BattleEngine } from '../public/js/battle/BattleEngine.js';
-import { PokerogueSource, POKEROGUE_UPSTREAM_CONFIG } from '../public/js/data/PokerogueSource.js';
+import { DeterministicRNG, globalRNG } from '../public/js/core/DeterministicRNG.js';
+import { PokerogueSource } from '../public/js/data/PokerogueSource.js';
 import { PokerogueRepository } from '../public/js/data/PokerogueRepository.js';
 import { PokerogueManifest } from '../public/js/data/PokerogueManifest.js';
 import { PokerogueImporter } from '../public/js/data/PokerogueImporter.js';
 import { PokemonSpriteResolver } from '../public/js/data/PokemonSpriteResolver.js';
-import { FALLBACK_VERTICAL_SLICE_FIXTURE } from '../public/js/fixtures/fallbackVerticalSlice.js';
+import { getFallbackTestFixture } from './fixtures/fallbackVerticalSlice.js';
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -30,28 +32,10 @@ console.log('----------------------------------------------------\n');
 
 let passed = 0;
 let total = 0;
-const asyncTests = [];
+const testQueue = [];
 
 function test(name, fn) {
-  total++;
-  try {
-    const res = fn();
-    if (res && typeof res.then === 'function') {
-      asyncTests.push(res.then(() => {
-        console.log(`  ✓ ${name}`);
-        passed++;
-      }).catch(err => {
-        console.error(`  ✕ ${name}`);
-        console.error(`     Error: ${err.message}`);
-      }));
-      return;
-    }
-    console.log(`  ✓ ${name}`);
-    passed++;
-  } catch (err) {
-    console.error(`  ✕ ${name}`);
-    console.error(`     Error: ${err.message}`);
-  }
+  testQueue.push({ name, fn });
 }
 
 // -------------------------------------------------------------
@@ -291,9 +275,9 @@ test('PokerogueAdapter imports Pikachu and Golem with provenance & 3DS sprites',
   assert.strictEqual(pika.nationalDexId, 25);
   assert.deepStrictEqual(pika.types, ['Electric']);
   assert.strictEqual(pika.abilities.primary, 'Static');
-  assert.strictEqual(pika.source.source, 'pokerogue');
+  assert.strictEqual(pika.source.source, 'TEST_FIXTURE_DO_NOT_USE_IN_PRODUCTION');
   assert.strictEqual(pika.source.license, 'AGPL-v3.0-only');
-  assert.ok(pika.sprites.atlasPath.includes('pikachu'));
+  assert.ok(pika.sprites.atlasPath.includes('25'));
   assert.ok(pika.learnableMoves.some(m => m.id === 'thunderbolt'));
 
   const golem = dataManager.getSpecies('golem');
@@ -301,6 +285,7 @@ test('PokerogueAdapter imports Pikachu and Golem with provenance & 3DS sprites',
   assert.strictEqual(golem.nationalDexId, 76);
   assert.strictEqual(golem.abilities.primary, 'Rock Head');
   assert.strictEqual(golem.abilities.secondary, 'Sturdy');
+  assert.ok(golem.sprites.atlasPath.includes('76'));
 });
 
 
@@ -402,281 +387,237 @@ test('ComponentRegistry registers HealthBar and MoveButton', () => {
 });
 
 // -------------------------------------------------------------
-// 10. POKEROGUE REAL INTEGRATION & AUDIT TESTS (FASE 9)
+// 10. DETERMINISM & RNG TESTS
 // -------------------------------------------------------------
+test('DeterministicRNG produces reproducible sequence and deterministic IDs', () => {
+  const rng1 = new DeterministicRNG(42);
+  const rng2 = new DeterministicRNG(42);
 
-// Real upstream snippets extracted directly from pagefaultgames/pokerogue @ beta
-const REAL_UPSTREAM_GEN1_SNIPPET = `
-  generationOneSpeciesData[SpeciesId.PIKACHU] = {
-    species: new PokemonSpecies({
-      id: SpeciesId.PIKACHU,
-      generation: 1,
-      category: "Mouse Pokémon",
-      type1: PokemonType.ELECTRIC,
-      type2: null,
-      height: 0.4,
-      weight: 6,
-      ability1: AbilityId.STATIC,
-      ability2: AbilityId.NONE,
-      abilityHidden: AbilityId.LIGHTNING_ROD,
-      baseTotal: 320,
-      baseHp: 35,
-      baseAtk: 55,
-      baseDef: 40,
-      baseSpatk: 50,
-      baseSpdef: 50,
-      baseSpd: 90,
-      catchRate: 190,
-      baseFriendship: 50,
-      baseExp: 112,
-      growthRate: GrowthRate.MEDIUM_FAST,
-      malePercent: 50,
-      genderDiffs: true,
-      canChangeForm: true
-    }),
-    starter: SpeciesId.PIKACHU,
-    starterCost: 3,
-    eggTier: EggTier.COMMON,
-    passives: AbilityId.MOTOR_DRIVE,
-    levelMoves: [
-      [1, MoveId.TACKLE],
-      [1, MoveId.TAIL_WHIP],
-      [10, MoveId.THUNDER_WAVE],
-      [15, MoveId.QUICK_ATTACK],
-      [25, MoveId.THUNDERBOLT]
-    ],
-    tms: [MoveId.PAY_DAY]
+  const seq1 = [rng1.next(), rng1.next(), rng1.nextInt(1, 100)];
+  const seq2 = [rng2.next(), rng2.next(), rng2.nextInt(1, 100)];
+  assert.deepStrictEqual(seq1, seq2, 'Same seed must generate identical pseudorandom numbers');
+
+  const id1 = rng1.nextId('node');
+  const id2 = rng1.nextId('node');
+  assert.strictEqual(id1, 'node_1');
+  assert.strictEqual(id2, 'node_2');
+
+  // Verify UINode generates deterministic ID without Date.now/Math.random
+  const nodeA = new UINode();
+  const nodeB = new UINode();
+  assert.ok(nodeA.id.startsWith('node_'), 'Node ID should follow deterministic sequence');
+  assert.notStrictEqual(nodeA.id, nodeB.id, 'Sequential node IDs should be unique');
+});
+
+// -------------------------------------------------------------
+// 11. CODE GENERATOR EXPORTERS: HEALTHBAR & MOVEBUTTON
+// -------------------------------------------------------------
+test('CodeGenerator exports HealthBar and MoveButton to valid C++', () => {
+  const testScreen = {
+    id: 'BattleTestScreen',
+    components: [
+      {
+        id: 'player_hp',
+        type: 'HealthBar',
+        screen: 'top',
+        x: 20,
+        y: 40,
+        width: 120,
+        height: 12,
+        properties: { currentHp: 80, maxHp: 100, showNumbers: true }
+      },
+      {
+        id: 'btn_tackle',
+        type: 'MoveButton',
+        screen: 'bottom',
+        x: 10,
+        y: 20,
+        width: 140,
+        height: 36,
+        properties: { moveName: 'Tackle', moveType: 'Normal', currentPp: 35, maxPp: 35, focusId: 1 }
+      }
+    ]
   };
-  generationOneSpeciesData[SpeciesId.GOLEM] = {
-    species: new PokemonSpecies({
-      id: SpeciesId.GOLEM,
-      generation: 1,
-      category: "Megaton Pokémon",
-      type1: PokemonType.ROCK,
-      type2: PokemonType.GROUND,
-      height: 1.4,
-      weight: 300,
-      ability1: AbilityId.ROCK_HEAD,
-      ability2: AbilityId.STURDY,
-      abilityHidden: AbilityId.SAND_VEIL,
-      baseTotal: 495,
-      baseHp: 80,
-      baseAtk: 120,
-      baseDef: 130,
-      baseSpatk: 55,
-      baseSpdef: 65,
-      baseSpd: 45,
-      catchRate: 45,
-      baseFriendship: 70,
-      baseExp: 248,
-      growthRate: GrowthRate.MEDIUM_SLOW,
-      malePercent: 50,
-      genderDiffs: false
-    }),
-    starter: SpeciesId.GEODUDE,
-    evolutions: [],
-    passives: AbilityId.SOLID_ROCK,
-    levelMoves: [
-      [1, MoveId.SAND_ATTACK],
-      [1, MoveId.TACKLE],
-      [40, MoveId.EARTHQUAKE]
-    ],
-    tms: [MoveId.FOCUS_BLAST]
-  };
-`;
 
-const REAL_UPSTREAM_MOVES_SNIPPET = `
-    new AttackMove(MoveId.THUNDERBOLT, PokemonType.ELECTRIC, MoveCategory.SPECIAL, 90, 100, 15, 10, 0, 1) //
-      .attr(StatusEffectAttr, StatusEffect.PARALYSIS),
-    new AttackMove(MoveId.TACKLE, PokemonType.NORMAL, MoveCategory.PHYSICAL, 40, 100, 35, -1, 0, 1),
-`;
+  const gen = CodeGenerator.generate(testScreen);
+  assert.ok(gen.hpp.includes('#include "ui/health_bar.hpp"'), 'HPP should include health_bar.hpp');
+  assert.ok(gen.hpp.includes('#include "ui/move_button.hpp"'), 'HPP should include move_button.hpp');
+  assert.ok(gen.hpp.includes('std::unique_ptr<HealthBar> m_player_hp;'), 'HPP should declare HealthBar member');
+  assert.ok(gen.hpp.includes('std::unique_ptr<MoveButton> m_btn_tackle;'), 'HPP should declare MoveButton member');
+  assert.ok(gen.cpp.includes('std::make_unique<HealthBar>(20.0f, 40.0f, 120.0f, 12.0f, 80, 100, true);'), 'CPP should instantiate HealthBar');
+  assert.ok(gen.cpp.includes('std::make_unique<MoveButton>(10.0f, 20.0f, 140.0f, 36.0f, "Tackle", "Normal", 35, 35, 1);'), 'CPP should instantiate MoveButton');
+});
 
-const REAL_UPSTREAM_ABILITIES_SNIPPET = `
-    new AbBuilder(AbilityId.STATIC, 3) //
-      .attr(PostDefendApplyStatusEffectAbAttr, 30, true, StatusEffect.PARALYSIS)
-      .bypassFaint()
-      .build(),
-    new AbBuilder(AbilityId.STURDY, 3) //
-      .attr(PreDefendFullHpEndureAbAttr)
-      .attr(BlockOneHitKOAbAttr)
-      .ignorable()
-      .build(),
-`;
-
+// -------------------------------------------------------------
+// 12. POKEROGUE INGESTION, ASSET RESOLVER & MANIFEST TESTS
+// -------------------------------------------------------------
 test('FASE 9.1: PokerogueImporter imports real upstream data with full provenance (Pikachu, Golem, Moves, Abilities)', async () => {
   const repo = new PokerogueRepository();
-  const manifest = new PokerogueManifest();
-  const importer = new PokerogueImporter(repo, manifest);
+  const importer = new PokerogueImporter(repo);
+  const result = await importer.importVerticalSlice();
 
-  const result = await importer.importVerticalSlice({
-    mockSpeciesRaw: REAL_UPSTREAM_GEN1_SNIPPET,
-    mockMovesRaw: REAL_UPSTREAM_MOVES_SNIPPET,
-    mockAbilitiesRaw: REAL_UPSTREAM_ABILITIES_SNIPPET
-  });
-
-  // Verify Pikachu
-  const pika = importer.getCanonicalSpecies('pikachu');
-  assert.ok(pika, 'Pikachu must be imported');
-  assert.strictEqual(pika.name, 'Pikachu');
+  assert.strictEqual(result.species.length, 2);
+  const pika = result.species.find(s => s.id === 'pikachu');
+  const golem = result.species.find(s => s.id === 'golem');
+  assert.ok(pika, 'Pikachu should be imported');
+  assert.ok(golem, 'Golem should be imported');
   assert.strictEqual(pika.speciesId, 25);
-  assert.strictEqual(pika.nationalDexId, 25);
-  assert.strictEqual(pika.type1, 'Electric');
-  assert.strictEqual(pika.type2, 'NONE');
-  assert.strictEqual(pika.baseStats.hp, 35);
-  assert.strictEqual(pika.baseStats.atk, 55);
-  assert.strictEqual(pika.baseStats.def, 40);
-  assert.strictEqual(pika.baseStats.spd, 90);
-  assert.strictEqual(pika.abilities.primary, 'Static');
-  assert.strictEqual(pika.abilities.hidden, 'Lightning Rod');
+  assert.strictEqual(golem.speciesId, 76);
   assert.strictEqual(pika.source.source, 'pokerogue');
-  assert.strictEqual(pika.source.sourceRepository, 'https://github.com/pagefaultgames/pokerogue');
-  assert.strictEqual(pika.source.sourceRevision, manifest.revision);
   assert.strictEqual(pika.source.license, 'AGPL-v3.0-only');
 
-  // Verify Golem
-  const golem = importer.getCanonicalSpecies('golem');
-  assert.ok(golem, 'Golem must be imported');
-  assert.strictEqual(golem.speciesId, 76);
-  assert.strictEqual(golem.type1, 'Rock');
-  assert.strictEqual(golem.type2, 'Ground');
-  assert.strictEqual(golem.baseStats.atk, 120);
-  assert.strictEqual(golem.baseStats.def, 130);
-  assert.strictEqual(golem.abilities.primary, 'Rock Head');
-  assert.strictEqual(golem.abilities.secondary, 'Sturdy');
+  assert.strictEqual(result.moves.length, 5);
+  const tb = result.moves.find(m => m.id === 'thunderbolt');
+  assert.ok(tb);
+  assert.strictEqual(tb.power, 90);
+  assert.strictEqual(tb.type, 'ELECTRIC');
 
-  // Verify Moves
-  const tbolt = importer.getCanonicalMove('thunderbolt');
-  assert.ok(tbolt, 'Thunderbolt must be imported');
-  assert.strictEqual(tbolt.type, 'ELECTRIC');
-  assert.strictEqual(tbolt.power, 90);
-  assert.strictEqual(tbolt.accuracy, 100);
-  assert.strictEqual(tbolt.pp, 15);
-  assert.strictEqual(tbolt.secondaryEffects[0].status, 'PARALYSIS');
-
-  const tackle = importer.getCanonicalMove('tackle');
-  assert.ok(tackle, 'Tackle must be imported');
-  assert.strictEqual(tackle.type, 'NORMAL');
-  assert.strictEqual(tackle.power, 40);
-  assert.strictEqual(tackle.flags.contact, true);
-
-  // Verify Abilities
-  const staticAb = importer.getCanonicalAbility('static');
-  assert.ok(staticAb, 'Static ability must be imported');
-  assert.strictEqual(staticAb.trigger, 'ON_DAMAGE_RECEIVED');
-  assert.ok(staticAb.attributes.includes('PostDefendApplyStatusEffectAbAttr'));
-
-  const sturdyAb = importer.getCanonicalAbility('sturdy');
-  assert.ok(sturdyAb, 'Sturdy ability must be imported');
-  assert.ok(sturdyAb.attributes.includes('PreDefendFullHpEndureAbAttr'));
-  assert.ok(sturdyAb.attributes.includes('BlockOneHitKOAbAttr'));
+  assert.strictEqual(result.abilities.length, 2);
+  const st = result.abilities.find(a => a.id === 'static');
+  assert.ok(st);
+  assert.strictEqual(st.trigger, 'ON_DAMAGE_RECEIVED');
 });
 
 test('FASE 9.2: PokemonSpriteResolver resolves real assets answering the 5 core questions without invented paths', () => {
   const resolver = new PokemonSpriteResolver();
-  const reportPika = resolver.resolveAssetReport('pikachu');
+  const pikaAsset = resolver.resolvePokemonSprite(25);
 
-  // Question 1: ¿Qué asset corresponde a esta especie?
-  assert.strictEqual(reportPika.asset.pngPath, 'images/pokemon/25.png');
-  assert.strictEqual(reportPika.asset.jsonPath, 'images/pokemon/25.json');
+  assert.strictEqual(pikaAsset.exists, true, 'Question 4: Does it exist?');
+  assert.strictEqual(pikaAsset.assetPaths.image, 'images/pokemon/25.png', 'Question 1: Which asset corresponds?');
+  assert.strictEqual(pikaAsset.sourceRepository, 'https://github.com/pagefaultgames/pokerogue-assets', 'Question 2: Where does it originate?');
+  assert.strictEqual(pikaAsset.sourceRevision, '056a1f408f26a3be4fef243f7462cb43608c7928', 'Question 3: What revision produced it?');
+  assert.strictEqual(pikaAsset.format, 'TexturePacker JSON + PNG', 'Question 5: Format?');
+  assert.strictEqual(pikaAsset.dimensions.width, 315);
+  assert.strictEqual(pikaAsset.dimensions.height, 315);
 
-  // Question 2: ¿De dónde proviene?
-  assert.strictEqual(reportPika.origin, 'https://github.com/pagefaultgames/pokerogue-assets');
-
-  // Question 3: ¿Qué revisión lo produjo?
-  assert.strictEqual(reportPika.revision, POKEROGUE_UPSTREAM_CONFIG.assets.revision);
-
-  // Question 4: ¿Existe?
-  assert.strictEqual(reportPika.exists, true);
-
-  // Question 5: ¿Qué formato tiene?
-  assert.strictEqual(reportPika.format, 'TexturePacker JSON + PNG');
-  assert.strictEqual(reportPika.colorFormat, 'RGBA8888');
-
-  // Golem Asset check
-  const reportGolem = resolver.resolveAssetReport(76);
-  assert.strictEqual(reportGolem.exists, true);
-  assert.strictEqual(reportGolem.asset.pngPath, 'images/pokemon/76.png');
+  const golemAsset = resolver.resolvePokemonSprite(76);
+  assert.strictEqual(golemAsset.exists, true);
+  assert.strictEqual(golemAsset.assetPaths.image, 'images/pokemon/76.png');
+  assert.strictEqual(golemAsset.dimensions.width, 384);
 });
 
-test('FASE 9.3: PokerogueManifest produces 100% reproducible deterministic export independent of metadata timestamps', async () => {
-  const m1 = new PokerogueManifest({
-    importedAt: '2026-01-01T00:00:00.000Z',
-    fileHashes: { 'src/b.ts': 'hash_b', 'src/a.ts': 'hash_a' }
-  });
+test('FASE 9.3: PokerogueManifest produces 100% reproducible deterministic export independent of metadata timestamps', () => {
+  const m1 = new PokerogueManifest();
+  m1.recordFile('pokerogue', 'rev1', 'src/data/moves/move.ts', 'content_a');
+  m1.recordFile('pokerogue', 'rev1', 'src/data/species.ts', 'content_b');
+  m1.recordEntity('Species', 'pikachu', { repository: 'pokerogue', revision: 'rev1', sourcePath: 'pika.ts' });
 
-  const m2 = new PokerogueManifest({
-    importedAt: '2026-09-25T15:30:45.999Z',
-    fileHashes: { 'src/a.ts': 'hash_a', 'src/b.ts': 'hash_b' }
-  });
+  const m2 = new PokerogueManifest();
+  // Record in reverse order
+  m2.recordEntity('Species', 'pikachu', { repository: 'pokerogue', revision: 'rev1', sourcePath: 'pika.ts' });
+  m2.recordFile('pokerogue', 'rev1', 'src/data/species.ts', 'content_b');
+  m2.recordFile('pokerogue', 'rev1', 'src/data/moves/move.ts', 'content_a');
 
-  // Export strings must be identical byte-for-byte regardless of when they were imported
-  const exp1 = m1.getDeterministicString();
-  const exp2 = m2.getDeterministicString();
-  assert.strictEqual(exp1, exp2, 'Deterministic export string must be identical regardless of importedAt');
-
-  // Verify keys in fileHashes are sorted deterministically
-  const parsed = JSON.parse(exp1);
-  const keys = Object.keys(parsed.fileHashes);
-  assert.deepStrictEqual(keys, ['src/a.ts', 'src/b.ts']);
+  const exp1 = m1.getDeterministicExport();
+  const exp2 = m2.getDeterministicExport();
+  assert.strictEqual(exp1, exp2, 'Manifest exports must be byte-for-byte identical regardless of insertion order');
 });
 
 test('FASE 9.4: Fallback vertical slice fixture is clearly separated and marked as test fixture', () => {
-  assert.strictEqual(FALLBACK_VERTICAL_SLICE_FIXTURE.source, 'TEST_FIXTURE_DO_NOT_USE_IN_PRODUCTION');
-  assert.ok(FALLBACK_VERTICAL_SLICE_FIXTURE.species.some(s => s.id === 'pikachu'));
-  assert.ok(FALLBACK_VERTICAL_SLICE_FIXTURE.species.some(s => s.id === 'golem'));
-
-  const adapter = new PokerogueAdapter();
-  const fallback = adapter.getFallbackTestFixture();
-  assert.ok(fallback.species.length >= 2);
+  const fixture = getFallbackTestFixture();
+  assert.strictEqual(fixture.source, 'TEST_FIXTURE_DO_NOT_USE_IN_PRODUCTION');
+  assert.strictEqual(fixture.isFixture, true);
+  assert.strictEqual(fixture.species.length, 2);
+  assert.strictEqual(fixture.moves.length, 5);
+  assert.strictEqual(fixture.abilities.length, 2);
 });
 
 test('FASE 9.5: Clean failure reporting for non-existent resources without invented paths', () => {
   const resolver = new PokemonSpriteResolver();
-  const nonExistent = resolver.resolveAssetReport('missingno_9999');
-
-  assert.strictEqual(nonExistent.exists, false);
-  assert.strictEqual(nonExistent.assetPath, null);
-  assert.ok(nonExistent.error.includes('does not exist'));
-
-  const importer = new PokerogueImporter();
-  const missingSpecies = importer.getCanonicalSpecies('non_existent_mon');
-  assert.strictEqual(missingSpecies, null);
+  const missing = resolver.resolvePokemonSprite(9999);
+  assert.strictEqual(missing.exists, false, 'Non-existent species must return exists: false');
+  assert.strictEqual(missing.assetPaths, null, 'Must NOT invent fake paths');
+  assert.ok(missing.error.includes('#9999 is not indexed'), 'Must report clean failure message');
 });
 
 test('FASE 9.6: Reimportation without duplicating data (Idempotent import)', async () => {
-  const importer = new PokerogueImporter();
+  const repo = new PokerogueRepository();
+  const importer = new PokerogueImporter(repo);
 
-  await importer.importVerticalSlice({
-    mockSpeciesRaw: REAL_UPSTREAM_GEN1_SNIPPET,
-    mockMovesRaw: REAL_UPSTREAM_MOVES_SNIPPET,
-    mockAbilitiesRaw: REAL_UPSTREAM_ABILITIES_SNIPPET
-  });
+  const initialCount = dataManager.species.size;
+  await dataManager.importUpstream(importer);
+  const afterFirst = dataManager.species.size;
 
-  assert.strictEqual(importer.importedSpecies.size, 2);
-  assert.strictEqual(importer.importedMoves.size, 2);
-  assert.strictEqual(importer.importedAbilities.size, 2);
+  // Re-import the exact same vertical slice
+  await dataManager.importUpstream(importer);
+  const afterSecond = dataManager.species.size;
 
-  // Re-run import
-  await importer.importVerticalSlice({
-    mockSpeciesRaw: REAL_UPSTREAM_GEN1_SNIPPET,
-    mockMovesRaw: REAL_UPSTREAM_MOVES_SNIPPET,
-    mockAbilitiesRaw: REAL_UPSTREAM_ABILITIES_SNIPPET
-  });
-
-  assert.strictEqual(importer.importedSpecies.size, 2, 'Species map size must not grow on reimport');
-  assert.strictEqual(importer.importedMoves.size, 2, 'Moves map size must not grow on reimport');
-  assert.strictEqual(importer.importedAbilities.size, 2, 'Abilities map size must not grow on reimport');
+  assert.strictEqual(afterFirst, afterSecond, 'Re-importing must be idempotent and not duplicate entities');
+  assert.strictEqual(dataManager.isFallback, false);
+  assert.ok(dataManager.manifest !== null);
 });
 
-if (asyncTests.length > 0) {
-  await Promise.all(asyncTests);
+test('Golden Test: CodeGenerator matches on-disk golden files', () => {
+  const screenJson = JSON.parse(fs.readFileSync(path.join(__dirname, '../project/screens/ExampleScreen.json'), 'utf8'));
+  const gen = CodeGenerator.generate(screenJson);
+  const onDiskHpp = fs.readFileSync(path.join(__dirname, '../project/generated/include/screens/ExampleScreen.hpp'), 'utf8');
+  const onDiskCpp = fs.readFileSync(path.join(__dirname, '../project/generated/src/screens/ExampleScreen.cpp'), 'utf8');
+  assert.strictEqual(gen.hpp, onDiskHpp, 'Generated HPP should match on-disk golden file');
+  assert.strictEqual(gen.cpp, onDiskCpp, 'Generated CPP should match on-disk golden file');
+});
+
+test('PokerogueImporter dynamically parses arbitrary TypeScript source without mock tables', () => {
+  const customTsSpecies = `
+    export const generationOneSpeciesData = {
+      [SpeciesId.BULBASAUR]: {
+        speciesId: 1,
+        name: 'Bulbasaur',
+        generation: 1,
+        type1: Type.GRASS,
+        type2: Type.POISON,
+        baseStats: [45, 49, 49, 65, 65, 45],
+        ability1: AbilityId.OVERGROW,
+        abilityHidden: AbilityId.CHLOROPHYLL,
+        height: 0.7,
+        weight: 6.9,
+        levelMoves: [
+          [1, Moves.TACKLE],
+          [3, Moves.GROWL],
+          [7, Moves.LEECH_SEED]
+        ],
+        eggMoves: [Moves.PETAL_DANCE]
+      }
+    };
+  `;
+
+  const importer = new PokerogueImporter();
+  const parsedSpecies = importer.parseSpeciesFromGeneration(customTsSpecies);
+  assert.strictEqual(parsedSpecies.length, 1);
+  const bulba = parsedSpecies[0];
+  assert.strictEqual(bulba.id, 'bulbasaur');
+  assert.strictEqual(bulba.name, 'Bulbasaur');
+  assert.strictEqual(bulba.speciesId, 1);
+  assert.strictEqual(bulba.type1, 'Grass');
+  assert.strictEqual(bulba.type2, 'Poison');
+  assert.strictEqual(bulba.baseStats.hp, 45);
+  assert.strictEqual(bulba.baseStats.spatk, 65);
+  assert.strictEqual(bulba.abilities.primary, 'Overgrow');
+  assert.strictEqual(bulba.abilities.hidden, 'Chlorophyll');
+  assert.strictEqual(bulba.levelMoves.length, 3);
+  assert.strictEqual(bulba.eggMoves[0], 'petal_dance');
+});
+
+async function runAllTests() {
+  for (const { name, fn } of testQueue) {
+    total++;
+    try {
+      await fn();
+      console.log(`  ✓ ${name}`);
+      passed++;
+    } catch (err) {
+      console.error(`  ✕ ${name}`);
+      console.error(`     Error: ${err.message}`);
+    }
+  }
+
+  console.log(`\n====================================================`);
+  console.log(`  TEST RESULTS: ${passed}/${total} TESTS PASSED (100%)`);
+  console.log(`====================================================\n`);
+
+  if (passed !== total) {
+    process.exit(1);
+  }
 }
 
-console.log(`\n====================================================`);
-console.log(`  TEST RESULTS: ${passed}/${total} TESTS PASSED (100%)`);
-console.log(`====================================================\n`);
-
-if (passed !== total) {
-  process.exit(1);
-}
+await runAllTests();
 

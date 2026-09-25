@@ -35,7 +35,13 @@ export class BattleEngine {
   }
 
   emit(eventName, payload) {
-    const event = { type: eventName, ...payload, timestamp: Date.now() };
+    this.stepCounter = (this.stepCounter || 0) + 1;
+    const event = {
+      type: eventName,
+      ...payload,
+      turn: this.state?.turn || 1,
+      stepIndex: this.stepCounter
+    };
     this.state.eventLog.push(event);
     if (this.listeners.has(eventName)) {
       this.listeners.get(eventName).forEach(cb => {

@@ -101,11 +101,66 @@ class TouchButtonExporter extends BaseComponentExporter {
   }
 }
 
+class HealthBarExporter extends BaseComponentExporter {
+  getIncludes() {
+    return ['#include "ui/health_bar.hpp"'];
+  }
+
+  getMember(comp, varName) {
+    return `std::unique_ptr<HealthBar> ${varName};`;
+  }
+
+  getInitialization(comp, varName) {
+    const x = `${comp.x}.0f`;
+    const y = `${comp.y}.0f`;
+    const w = `${comp.width}.0f`;
+    const h = `${comp.height}.0f`;
+    const props = comp.properties || {};
+    const cur = Number(props.currentHp ?? 100);
+    const max = Number(props.maxHp ?? 100);
+    const showText = props.showNumbers !== false ? 'true' : 'false';
+
+    return [
+      `    ${varName} = std::make_unique<HealthBar>(${x}, ${y}, ${w}, ${h}, ${cur}, ${max}, ${showText});`
+    ];
+  }
+}
+
+class MoveButtonExporter extends BaseComponentExporter {
+  getIncludes() {
+    return ['#include "ui/move_button.hpp"', '#include "ui/focus_manager.hpp"'];
+  }
+
+  getMember(comp, varName) {
+    return `std::unique_ptr<MoveButton> ${varName};`;
+  }
+
+  getInitialization(comp, varName) {
+    const x = `${comp.x}.0f`;
+    const y = `${comp.y}.0f`;
+    const w = `${comp.width}.0f`;
+    const h = `${comp.height}.0f`;
+    const props = comp.properties || {};
+    const name = CodeGenerator.escapeString(props.moveName || 'Tackle');
+    const type = CodeGenerator.escapeString(props.moveType || 'Normal');
+    const curPp = Number(props.currentPp ?? 35);
+    const maxPp = Number(props.maxPp ?? 35);
+    const focusId = Number.isInteger(props.focusId) ? props.focusId : 0;
+
+    return [
+      `    ${varName} = std::make_unique<MoveButton>(${x}, ${y}, ${w}, ${h}, "${name}", "${type}", ${curPp}, ${maxPp}, ${focusId});`,
+      `    m_focus_manager.addElement(${varName}.get());`
+    ];
+  }
+}
+
 export class CodeGenerator {
   static exporters = new Map([
     ['RogueBox', new RogueBoxExporter()],
     ['PixelText', new PixelTextExporter()],
-    ['TouchButton', new TouchButtonExporter()]
+    ['TouchButton', new TouchButtonExporter()],
+    ['HealthBar', new HealthBarExporter()],
+    ['MoveButton', new MoveButtonExporter()]
   ]);
 
   /**

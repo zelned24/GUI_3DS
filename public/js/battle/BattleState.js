@@ -111,9 +111,9 @@ export class PokemonBattleData {
 
 export class BattleState {
   constructor(playerPokemon, enemyPokemon, seed = 12345) {
-    this.battleId = 'battle_' + Math.floor(Math.random() * 100000);
-    this.seed = seed;
-    this.rngState = seed;
+    this.seed = Number(seed) || 12345;
+    this.battleId = `battle_seed_${this.seed >>> 0}`;
+    this.rngState = this.seed >>> 0;
     this.turn = 1;
     this.wave = 1;
     this.phase = 'WaitingForCommand'; // CommandPhase, MoveResolvePhase, DamagePhase, EffectPhase, EndTurnPhase

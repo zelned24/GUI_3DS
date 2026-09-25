@@ -1,66 +1,84 @@
+import { PokerogueSource, POKEROGUE_REPOSITORIES } from './PokerogueSource.js';
+
 /**
- * public/js/data/PokerogueRepository.js
- * 
- * First Layer: Low-level data fetcher and cache manager for raw PokéRogue files.
- * Handles network requests, in-memory caching, and resource access.
+ * PokerogueRepository - Data access layer for upstream PokéRogue source code.
+ * Implements canonical in-memory caching and path resolution for generation files,
+ * moves, abilities, and asset atlases.
  */
-
-import { PokerogueSource } from './PokerogueSource.js';
-
 export class PokerogueRepository {
-  constructor(source = new PokerogueSource()) {
-    this.source = source;
+  constructor() {
+    /** @type {Map<string, string>} */
     this.cache = new Map();
   }
 
-  getCacheKey(repoKey, filePath, revision = null) {
-    const conf = this.source.getRepoConfig(repoKey);
-    const rev = revision || conf.revision;
-    return `${conf.name}:${rev}:${filePath}`;
+  /**
+   * Generates a canonical cache key: ${repo}:${revision}:${path}
+   */
+  getCacheKey(repoKey, filePath) {
+    const config = POKEROGUE_REPOSITORIES[repoKey];
+    const revision = config ? config.revision : 'unknown';
+    const cleanPath = String(filePath).replace(/^\/+/, '');
+    return `${repoKey}:${revision}:${cleanPath}`;
   }
 
-  hasInCache(repoKey, filePath, revision = null) {
-    return this.cache.has(this.getCacheKey(repoKey, filePath, revision));
+  /**
+   * Directly seeds the cache with content (useful for offline tests or pre-cached bundles).
+   */
+  setCache(repoKey, filePath, content) {
+    const key = this.getCacheKey(repoKey, filePath);
+    this.cache.set(key, content);
   }
 
-  setCache(repoKey, filePath, content, revision = null) {
-    this.cache.set(this.getCacheKey(repoKey, filePath, revision), content);
+  /**
+   * Checks if a file is present in the local cache.
+   */
+  hasCache(repoKey, filePath) {
+    return this.cache.has(this.getCacheKey(repoKey, filePath));
   }
 
-  getFromCache(repoKey, filePath, revision = null) {
-    return this.cache.get(this.getCacheKey(repoKey, filePath, revision));
-  }
-
-  clearCache() {
-    this.cache.clear();
-  }
-
-  async getRawFile(repoKey, filePath, options = {}) {
-    const cacheKey = this.getCacheKey(repoKey, filePath, options.revision);
-    if (!options.bypassCache && this.cache.has(cacheKey)) {
-      return this.cache.get(cacheKey);
+  /**
+   * Retrieves content from cache or fetches from upstream.
+   */
+  async getFile(repoKey, filePath) {
+    const key = this.getCacheKey(repoKey, filePath);
+    if (this.cache.has(key)) {
+      return this.cache.get(key);
     }
-
-    const content = await this.source.fetchRaw(repoKey, filePath, options);
-    this.cache.set(cacheKey, content);
+    const content = await PokerogueSource.fetchSourceFile(repoKey, filePath);
+    this.cache.set(key, content);
     return content;
   }
 
-  async loadSpeciesGeneration(gen = 1, options = {}) {
+  /**
+   * Loads the TypeScript species file for a generation (e.g., generation-01.ts).
+   * @param {number} gen 1-9
+   */
+  async loadSpeciesGeneration(gen = 1) {
     const padGen = String(gen).padStart(2, '0');
     const path = `src/data/balance/species/generation-${padGen}.ts`;
-    return await this.getRawFile('pokerogue', path, options);
+    return this.getFile('pokerogue', path);
   }
 
-  async loadMovesFile(options = {}) {
-    return await this.getRawFile('pokerogue', 'src/data/moves/move.ts', options);
+  /**
+   * Loads the upstream moves TypeScript file.
+   */
+  async loadMovesFile() {
+    return this.getFile('pokerogue', 'src/data/moves/move.ts');
   }
 
-  async loadAbilitiesFile(options = {}) {
-    return await this.getRawFile('pokerogue', 'src/data/abilities/init-abilities.ts', options);
+  /**
+   * Loads the upstream abilities initialization TypeScript file.
+   */
+  async loadAbilitiesFile() {
+    return this.getFile('pokerogue', 'src/data/abilities/init-abilities.ts');
   }
 
-  async loadPokemonAssetMetadata(speciesId, options = {}) {
-    return await this.getRawFile('assets', `images/pokemon/${speciesId}.json`, options);
+  /**
+   * Loads the TexturePacker JSON asset atlas for a Pokemon species.
+   * @param {number|string} speciesId 
+   */
+  async loadPokemonAssetMetadata(speciesId) {
+    const path = `images/pokemon/${speciesId}.json`;
+    return this.getFile('pokerogue-assets', path);
   }
 }

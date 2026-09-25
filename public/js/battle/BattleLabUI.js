@@ -7,26 +7,32 @@
 import { PokemonBattleData, BattleState } from './BattleState.js';
 import { BattleEngine } from './BattleEngine.js';
 import { dataManager } from '../data/DataManager.js';
+import { PokemonSpriteResolver } from '../data/PokemonSpriteResolver.js';
 
 export class BattleLabUI {
   constructor(containerElement) {
     this.container = containerElement;
     this.state = null;
     this.engine = null;
+    this.spriteResolver = new PokemonSpriteResolver();
+    this.playerSpeciesId = 'pikachu';
+    this.enemySpeciesId = 'golem';
     this.initSimulation();
   }
 
-  initSimulation() {
-    const pikaSpecies = dataManager.getSpecies('pikachu');
-    const golemSpecies = dataManager.getSpecies('golem');
+  initSimulation(playerSpeciesId = this.playerSpeciesId, enemySpeciesId = this.enemySpeciesId) {
+    this.playerSpeciesId = playerSpeciesId;
+    this.enemySpeciesId = enemySpeciesId;
+    const pSpecies = dataManager.getSpecies(playerSpeciesId) || dataManager.getAllSpecies()[0];
+    const eSpecies = dataManager.getSpecies(enemySpeciesId) || dataManager.getAllSpecies()[1] || pSpecies;
 
-    if (!pikaSpecies || !golemSpecies) {
+    if (!pSpecies || !eSpecies) {
       console.warn('Species not found for BattleLab simulation');
       return;
     }
 
-    const playerPokemon = new PokemonBattleData(pikaSpecies, 20);
-    const enemyPokemon = new PokemonBattleData(golemSpecies, 20);
+    const playerPokemon = new PokemonBattleData(pSpecies, 20);
+    const enemyPokemon = new PokemonBattleData(eSpecies, 20);
 
     this.state = new BattleState(playerPokemon, enemyPokemon, 4242);
     this.engine = new BattleEngine(this.state);
@@ -47,8 +53,14 @@ export class BattleLabUI {
     const p = this.state.player.active;
     const e = this.state.enemy.active;
 
+    const playerSpriteResolved = this.spriteResolver.resolvePokemonSprite(p.species.speciesId);
+    const enemySpriteResolved = this.spriteResolver.resolvePokemonSprite(e.species.speciesId);
+    const pSpriteUrl = playerSpriteResolved.exists ? playerSpriteResolved.assetPaths.rawImageUrl : '';
+    const eSpriteUrl = enemySpriteResolved.exists ? enemySpriteResolved.assetPaths.rawImageUrl : '';
+
     const playerHpPercent = Math.max(0, Math.min(100, Math.round((p.currentHp / p.maxHp) * 100)));
     const enemyHpPercent = Math.max(0, Math.min(100, Math.round((e.currentHp / e.maxHp) * 100)));
+    const allSpecies = dataManager.getAllSpecies();
 
     const getHpColor = (percent) => percent > 50 ? '#48bb78' : percent > 20 ? '#ecc94b' : '#f56565';
 
@@ -59,6 +71,18 @@ export class BattleLabUI {
           <div class="battle-lab-title">
             <span class="battle-lab-badge">BATTLE LAB</span>
             <h2>PokéRogue 3DS Simulation Studio</h2>
+          </div>
+          <div class="battler-select-toolbar" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <label style="font-size:11px; font-weight:bold; color:#a0aec0;">Player:</label>
+            <select id="select-player-battler" class="battler-select" style="background:#2d3748; color:#fff; border:1px solid #4a5568; border-radius:4px; padding:3px 6px; font-size:12px; cursor:pointer;">
+              ${allSpecies.map(s => `<option value="${s.id}" ${s.id === this.playerSpeciesId ? 'selected' : ''}>${s.name} (#${s.speciesId})</option>`).join('')}
+            </select>
+            <span style="color:#718096; font-size:11px; font-weight:bold;">VS</span>
+            <label style="font-size:11px; font-weight:bold; color:#a0aec0;">Enemy:</label>
+            <select id="select-enemy-battler" class="battler-select" style="background:#2d3748; color:#fff; border:1px solid #4a5568; border-radius:4px; padding:3px 6px; font-size:12px; cursor:pointer;">
+              ${allSpecies.map(s => `<option value="${s.id}" ${s.id === this.enemySpeciesId ? 'selected' : ''}>${s.name} (#${s.speciesId})</option>`).join('')}
+            </select>
+            <button id="btn-apply-matchup" style="background:#3182ce; color:#fff; border:none; border-radius:4px; padding:3px 8px; font-size:11px; font-weight:bold; cursor:pointer;">Set Matchup</button>
           </div>
           <div class="battle-lab-meta">
             <span class="tag">Wave ${this.state.wave}</span>
@@ -81,8 +105,8 @@ export class BattleLabUI {
                 </div>
               </div>
               <div class="battler-sprite">
-                <img src="${dataManager.getSpecies('pikachu')?.sprites?.icon || 'assets/pikachu.png'}" alt="Pikachu" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-                <div class="sprite-fallback" style="display:none;">⚡</div>
+                <img src="${pSpriteUrl}" alt="${p.species.name}" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                <div class="sprite-fallback" style="display:${pSpriteUrl ? 'none' : 'block'};">⚡</div>
               </div>
             </div>
 
@@ -117,8 +141,8 @@ export class BattleLabUI {
                 </div>
               </div>
               <div class="battler-sprite">
-                <img src="${dataManager.getSpecies('golem')?.sprites?.icon || 'assets/golem.png'}" alt="Golem" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-                <div class="sprite-fallback" style="display:none;">🪨</div>
+                <img src="${eSpriteUrl}" alt="${e.species.name}" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                <div class="sprite-fallback" style="display:${eSpriteUrl ? 'none' : 'block'};">🪨</div>
               </div>
             </div>
 
@@ -269,5 +293,21 @@ export class BattleLabUI {
         this.render();
       });
     }
+
+    // Battler Selectors
+    const playerSelect = this.container.querySelector('#select-player-battler');
+    const enemySelect = this.container.querySelector('#select-enemy-battler');
+    const applyMatchupBtn = this.container.querySelector('#btn-apply-matchup');
+
+    const updateMatchup = () => {
+      if (playerSelect && enemySelect) {
+        this.initSimulation(playerSelect.value, enemySelect.value);
+        this.render();
+      }
+    };
+
+    if (playerSelect) playerSelect.addEventListener('change', updateMatchup);
+    if (enemySelect) enemySelect.addEventListener('change', updateMatchup);
+    if (applyMatchupBtn) applyMatchupBtn.addEventListener('click', updateMatchup);
   }
 }

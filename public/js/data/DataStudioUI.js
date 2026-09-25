@@ -5,6 +5,8 @@
  */
 
 import { dataManager } from './DataManager.js';
+import { PokerogueImporter } from './PokerogueImporter.js';
+import { PokerogueRepository } from './PokerogueRepository.js';
 
 export class DataStudioUI {
   constructor(containerElement) {
@@ -42,7 +44,8 @@ export class DataStudioUI {
         <div class="data-studio-sidebar">
           <div class="data-studio-header">
             <h3>📊 DATA STUDIO</h3>
-            <span class="data-badge">PokéRogue Canonical Model</span>
+            <span class="data-badge">${dataManager.isFallback ? 'Offline Fixture' : 'PokéRogue Upstream Synced'}</span>
+            <button id="btn-sync-upstream" class="btn-sync-upstream" style="margin-top:6px; padding:4px 8px; font-size:11px; font-weight:bold; background:#3182ce; color:#fff; border:none; border-radius:4px; cursor:pointer;">🔄 Sync Upstream Data</button>
           </div>
 
           <!-- Category Selector Tabs -->
@@ -302,6 +305,22 @@ export class DataStudioUI {
           updatedInput.focus();
           updatedInput.selectionStart = updatedInput.selectionEnd = updatedInput.value.length;
         }
+      });
+    }
+
+    // Upstream sync button
+    const syncBtn = this.container.querySelector('#btn-sync-upstream');
+    if (syncBtn) {
+      syncBtn.addEventListener('click', async () => {
+        syncBtn.textContent = '⏳ Syncing...';
+        syncBtn.disabled = true;
+        try {
+          const importer = new PokerogueImporter(new PokerogueRepository());
+          await dataManager.importUpstream(importer);
+        } catch (err) {
+          console.error('Error syncing upstream data:', err);
+        }
+        this.render();
       });
     }
   }

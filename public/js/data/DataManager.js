@@ -17,15 +17,42 @@ export class DataManager {
     this.typeChart = this._initTypeChart();
 
     // Populate baseline vertical slice
+    this.manifest = null;
     this.loadBaseline();
   }
 
   loadBaseline() {
     const { species, moves, abilities } = this.adapter.getVerticalSliceDataset();
+    this.loadDataset({ species, moves, abilities });
+    this.isFallback = true;
+    this._notify('dataLoaded', { count: this.species.size, source: 'fallback_fixture' });
+  }
+
+  /**
+   * Idempotently loads a dataset of species, moves, and abilities.
+   */
+  loadDataset({ species = [], moves = [], abilities = [] }) {
     species.forEach(s => this.species.set(s.id, s));
     moves.forEach(m => this.moves.set(m.id, m));
     abilities.forEach(a => this.abilities.set(a.id, a));
-    this._notify('dataLoaded', { count: this.species.size });
+  }
+
+  /**
+   * Performs real upstream ingestion using PokerogueImporter.
+   */
+  async importUpstream(importer) {
+    if (!importer) throw new Error('PokerogueImporter instance required');
+    const result = await importer.importVerticalSlice();
+    this.loadDataset(result);
+    this.manifest = result.manifest;
+    this.isFallback = false;
+    this._notify('upstreamSynced', {
+      speciesCount: result.species.length,
+      movesCount: result.moves.length,
+      abilitiesCount: result.abilities.length,
+      manifest: this.manifest
+    });
+    return result;
   }
 
   getSpecies(id) {

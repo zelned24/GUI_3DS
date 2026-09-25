@@ -1,6 +1,7 @@
 import { ComponentRegistry } from '../components/ComponentRegistry.js';
 import { HistoryManager } from './HistoryManager.js';
 import { Validator } from './Validator.js';
+import { globalRNG } from './DeterministicRNG.js';
 
 /**
  * ProjectModel - Hierarchical project and screen state manager.
@@ -82,7 +83,7 @@ export class ProjectModel {
   }
 
   createScreen(screenId, name) {
-    const id = (screenId || `Screen_${Date.now()}`).trim();
+    const id = (screenId || globalRNG.nextId('Screen')).trim();
     if (this.screensMap.has(id)) {
       throw new Error(`Screen with ID "${id}" already exists`);
     }

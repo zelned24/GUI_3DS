@@ -1,5 +1,6 @@
 import { SpeciesDefinition, MoveDefinition, AbilityDefinition, ItemDefinition } from './CanonicalModels.js';
-import { FALLBACK_VERTICAL_SLICE_FIXTURE } from '../fixtures/fallbackVerticalSlice.js';
+import { getFallbackTestFixture } from '../fixtures/fallbackVerticalSlice.js';
+import { PokemonSpriteResolver } from './PokemonSpriteResolver.js';
 
 function toTitleCase(str) {
   if (!str) return '';
@@ -71,19 +72,24 @@ export class PokerogueAdapter {
       },
       starterCost: Number(raw.starterCost ?? 3),
       eggTier: raw.eggTier || 'COMMON',
-      levelMoves: Array.isArray(raw.levelMoves) ? raw.levelMoves : [],
+      levelMoves: Array.isArray(raw.levelMoves) ? raw.levelMoves : (Array.isArray(raw.moveset) ? raw.moveset : []),
+      learnableMoves: Array.isArray(raw.learnableMoves) ? raw.learnableMoves : (Array.isArray(raw.levelMoves) ? raw.levelMoves : []),
       eggMoves: Array.isArray(raw.eggMoves) ? raw.eggMoves : [],
       forms: Array.isArray(raw.forms) ? raw.forms : ['BASE'],
-      sprites: {
-        atlasPath: `romfs/sprites/pokemon/${raw.speciesId || 0}_${String(raw.id || raw.name || '').toLowerCase()}.t3x`,
-        icon: `romfs/sprites/icons/${raw.speciesId || 0}_${String(raw.id || raw.name || '').toLowerCase()}.png`,
-        atlas: 'pokemon_front',
-        frame: `${raw.speciesId || 0}`,
-        hasShiny: true,
-        hasFemale: Boolean(raw.hasFemale)
-      },
+      sprites: (() => {
+        const resolver = new PokemonSpriteResolver();
+        const resolved = resolver.resolvePokemonSprite(raw.speciesId);
+        return {
+          atlasPath: resolved.exists ? resolved.target3DS.t3xPath : (raw.sprites?.atlasPath || `romfs/sprites/pokemon/${raw.speciesId || 0}.t3x`),
+          icon: resolved.exists ? resolved.assetPaths.image : (raw.sprites?.icon || `images/pokemon/${raw.speciesId || 0}.png`),
+          atlas: 'pokemon_front',
+          frame: `${raw.speciesId || 0}`,
+          hasShiny: true,
+          hasFemale: Boolean(raw.hasFemale)
+        };
+      })(),
 
-      source: {
+      source: raw.sourceMetadata || raw.source || {
         source: 'pokerogue',
         sourcePath: `src/data/pokemon-species.ts`,
         sourceRevision: this.sourceRevision,
@@ -204,20 +210,14 @@ export class PokerogueAdapter {
   }
 
   /**
-   * Provides the fallback test fixture strictly for offline / test fixtures.
-   * Production data MUST be ingested via PokerogueImporter directly from upstream.
-   */
-  getFallbackTestFixture() {
-    const species = FALLBACK_VERTICAL_SLICE_FIXTURE.species.map(s => this.normalizeSpecies(s));
-    const moves = FALLBACK_VERTICAL_SLICE_FIXTURE.moves.map(m => this.normalizeMove(m));
-    const abilities = FALLBACK_VERTICAL_SLICE_FIXTURE.abilities.map(a => this.normalizeAbility(a));
-    return { species, moves, abilities };
-  }
-
-  /**
-   * @deprecated Strictly for test fixtures. Do NOT use as production data source.
+   * @deprecated DO NOT USE IN PRODUCTION.
+   * Delegated to the isolated test fixture for offline fallback and unit testing.
    */
   getVerticalSliceDataset() {
-    return this.getFallbackTestFixture();
+    const fixture = getFallbackTestFixture();
+    const species = fixture.species.map(s => this.normalizeSpecies(s));
+    const moves = fixture.moves.map(m => this.normalizeMove(m));
+    const abilities = fixture.abilities.map(a => this.normalizeAbility(a));
+    return { species, moves, abilities };
   }
 }
