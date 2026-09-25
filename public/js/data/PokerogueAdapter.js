@@ -1,4 +1,5 @@
 import { SpeciesDefinition, MoveDefinition, AbilityDefinition, ItemDefinition } from './CanonicalModels.js';
+import { FALLBACK_VERTICAL_SLICE_FIXTURE } from '../fixtures/fallbackVerticalSlice.js';
 
 function toTitleCase(str) {
   if (!str) return '';
@@ -203,149 +204,20 @@ export class PokerogueAdapter {
   }
 
   /**
-   * Provides the foundational canonical baseline dataset for PokéRogue 3DS Vertical Slice:
-   * Pikachu (#25), Golem (#76), Thunderbolt, Tackle, Earthquake, Static, Sturdy.
+   * Provides the fallback test fixture strictly for offline / test fixtures.
+   * Production data MUST be ingested via PokerogueImporter directly from upstream.
+   */
+  getFallbackTestFixture() {
+    const species = FALLBACK_VERTICAL_SLICE_FIXTURE.species.map(s => this.normalizeSpecies(s));
+    const moves = FALLBACK_VERTICAL_SLICE_FIXTURE.moves.map(m => this.normalizeMove(m));
+    const abilities = FALLBACK_VERTICAL_SLICE_FIXTURE.abilities.map(a => this.normalizeAbility(a));
+    return { species, moves, abilities };
+  }
+
+  /**
+   * @deprecated Strictly for test fixtures. Do NOT use as production data source.
    */
   getVerticalSliceDataset() {
-    const species = [
-      this.normalizeSpecies({
-        speciesId: 25,
-        name: 'Pikachu',
-        generation: 1,
-        type1: 'Electric',
-        type2: 'NONE',
-        baseHp: 35,
-        baseAtk: 55,
-        baseDef: 40,
-        baseSpatk: 50,
-        baseSpdef: 50,
-        baseSpd: 90,
-        ability1: 'Static',
-        ability2: 'NONE',
-        abilityHidden: 'Lightning Rod',
-        passive: 'Motor Drive',
-        starterCost: 3,
-        eggTier: 'COMMON',
-        levelMoves: [
-          { level: 1, move: 'tackle' },
-          { level: 5, move: 'tail_whip' },
-          { level: 10, move: 'thunder_wave' },
-          { level: 15, move: 'quick_attack' },
-          { level: 25, move: 'thunderbolt' }
-        ],
-        eggMoves: ['volt_tackle', 'fake_out', 'extreme_speed', 'zing_zap']
-      }),
-      this.normalizeSpecies({
-        speciesId: 76,
-        name: 'Golem',
-        generation: 1,
-        type1: 'Rock',
-        type2: 'Ground',
-        baseHp: 80,
-        baseAtk: 120,
-        baseDef: 130,
-        baseSpatk: 55,
-        baseSpdef: 65,
-        baseSpd: 45,
-        ability1: 'Rock Head',
-        ability2: 'Sturdy',
-        abilityHidden: 'Sand Veil',
-        passive: 'Solid Rock',
-        starterCost: 3,
-        eggTier: 'COMMON',
-        levelMoves: [
-          { level: 1, move: 'tackle' },
-          { level: 11, move: 'rock_throw' },
-          { level: 22, move: 'rock_slide' },
-          { level: 32, move: 'earthquake' }
-        ],
-        eggMoves: ['accelerock', 'head_smash', 'shore_up', 'diamond_storm']
-      })
-    ];
-
-    const moves = [
-      this.normalizeMove({
-        moveId: 85,
-        id: 'thunderbolt',
-        name: 'Thunderbolt',
-        type: 'Electric',
-        category: 'Special',
-        power: 90,
-        accuracy: 100,
-        pp: 15,
-        priority: 0,
-        flags: { contact: false, protectable: true },
-        secondaryEffects: [{ chance: 10, status: 'PARALYSIS' }]
-      }),
-      this.normalizeMove({
-        moveId: 33,
-        id: 'tackle',
-        name: 'Tackle',
-        type: 'Normal',
-        category: 'Physical',
-        power: 40,
-        accuracy: 100,
-        pp: 35,
-        priority: 0,
-        flags: { contact: true, protectable: true }
-      }),
-      this.normalizeMove({
-        moveId: 98,
-        id: 'quick_attack',
-        name: 'Quick Attack',
-        type: 'Normal',
-        category: 'Physical',
-        power: 40,
-        accuracy: 100,
-        pp: 30,
-        priority: 1,
-        flags: { contact: true, protectable: true }
-      }),
-      this.normalizeMove({
-        moveId: 89,
-        id: 'earthquake',
-        name: 'Earthquake',
-        type: 'Ground',
-        category: 'Physical',
-        power: 100,
-        accuracy: 100,
-        pp: 10,
-        priority: 0,
-        flags: { contact: false, protectable: true }
-      }),
-      this.normalizeMove({
-        moveId: 157,
-        id: 'rock_slide',
-        name: 'Rock Slide',
-        type: 'Rock',
-        category: 'Physical',
-        power: 75,
-        accuracy: 90,
-        pp: 10,
-        priority: 0,
-        flags: { contact: false, protectable: true }
-      })
-    ];
-
-    const abilities = [
-      this.normalizeAbility({
-        id: 'static',
-        name: 'Static',
-        description: 'The Pokémon is charged with static electricity, so contact with it may cause paralysis.',
-        trigger: 'ON_DAMAGE_RECEIVED',
-        conditions: [{ key: 'contact', value: true }],
-        effects: [{ action: 'APPLY_STATUS', status: 'PARALYSIS', chance: 30 }]
-      }),
-      this.normalizeAbility({
-        id: 'sturdy',
-        name: 'Sturdy',
-        description: 'It cannot be knocked out with one hit if at full HP.',
-        trigger: 'ON_DAMAGE_PREVENTION',
-        conditions: [{ key: 'hpRatio', value: 1.0 }],
-        effects: [{ action: 'SURVIVE_LETHAL_HIT', minHP: 1 }]
-      })
-    ];
-
-    return { species, moves, abilities };
+    return this.getFallbackTestFixture();
   }
 }

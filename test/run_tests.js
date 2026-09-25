@@ -14,7 +14,12 @@ import { PokerogueAdapter } from '../public/js/data/PokerogueAdapter.js';
 import { dataManager } from '../public/js/data/DataManager.js';
 import { PokemonBattleData, BattleState } from '../public/js/battle/BattleState.js';
 import { BattleEngine } from '../public/js/battle/BattleEngine.js';
-
+import { PokerogueSource, POKEROGUE_UPSTREAM_CONFIG } from '../public/js/data/PokerogueSource.js';
+import { PokerogueRepository } from '../public/js/data/PokerogueRepository.js';
+import { PokerogueManifest } from '../public/js/data/PokerogueManifest.js';
+import { PokerogueImporter } from '../public/js/data/PokerogueImporter.js';
+import { PokemonSpriteResolver } from '../public/js/data/PokemonSpriteResolver.js';
+import { FALLBACK_VERTICAL_SLICE_FIXTURE } from '../public/js/fixtures/fallbackVerticalSlice.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,11 +30,22 @@ console.log('----------------------------------------------------\n');
 
 let passed = 0;
 let total = 0;
+const asyncTests = [];
 
 function test(name, fn) {
   total++;
   try {
-    fn();
+    const res = fn();
+    if (res && typeof res.then === 'function') {
+      asyncTests.push(res.then(() => {
+        console.log(`  ✓ ${name}`);
+        passed++;
+      }).catch(err => {
+        console.error(`  ✕ ${name}`);
+        console.error(`     Error: ${err.message}`);
+      }));
+      return;
+    }
     console.log(`  ✓ ${name}`);
     passed++;
   } catch (err) {
@@ -384,6 +400,277 @@ test('ComponentRegistry registers HealthBar and MoveButton', () => {
   assert.strictEqual(mb.properties.moveName, 'Thunderbolt');
   assert.strictEqual(mb.properties.power, 90);
 });
+
+// -------------------------------------------------------------
+// 10. POKEROGUE REAL INTEGRATION & AUDIT TESTS (FASE 9)
+// -------------------------------------------------------------
+
+// Real upstream snippets extracted directly from pagefaultgames/pokerogue @ beta
+const REAL_UPSTREAM_GEN1_SNIPPET = `
+  generationOneSpeciesData[SpeciesId.PIKACHU] = {
+    species: new PokemonSpecies({
+      id: SpeciesId.PIKACHU,
+      generation: 1,
+      category: "Mouse Pokémon",
+      type1: PokemonType.ELECTRIC,
+      type2: null,
+      height: 0.4,
+      weight: 6,
+      ability1: AbilityId.STATIC,
+      ability2: AbilityId.NONE,
+      abilityHidden: AbilityId.LIGHTNING_ROD,
+      baseTotal: 320,
+      baseHp: 35,
+      baseAtk: 55,
+      baseDef: 40,
+      baseSpatk: 50,
+      baseSpdef: 50,
+      baseSpd: 90,
+      catchRate: 190,
+      baseFriendship: 50,
+      baseExp: 112,
+      growthRate: GrowthRate.MEDIUM_FAST,
+      malePercent: 50,
+      genderDiffs: true,
+      canChangeForm: true
+    }),
+    starter: SpeciesId.PIKACHU,
+    starterCost: 3,
+    eggTier: EggTier.COMMON,
+    passives: AbilityId.MOTOR_DRIVE,
+    levelMoves: [
+      [1, MoveId.TACKLE],
+      [1, MoveId.TAIL_WHIP],
+      [10, MoveId.THUNDER_WAVE],
+      [15, MoveId.QUICK_ATTACK],
+      [25, MoveId.THUNDERBOLT]
+    ],
+    tms: [MoveId.PAY_DAY]
+  };
+  generationOneSpeciesData[SpeciesId.GOLEM] = {
+    species: new PokemonSpecies({
+      id: SpeciesId.GOLEM,
+      generation: 1,
+      category: "Megaton Pokémon",
+      type1: PokemonType.ROCK,
+      type2: PokemonType.GROUND,
+      height: 1.4,
+      weight: 300,
+      ability1: AbilityId.ROCK_HEAD,
+      ability2: AbilityId.STURDY,
+      abilityHidden: AbilityId.SAND_VEIL,
+      baseTotal: 495,
+      baseHp: 80,
+      baseAtk: 120,
+      baseDef: 130,
+      baseSpatk: 55,
+      baseSpdef: 65,
+      baseSpd: 45,
+      catchRate: 45,
+      baseFriendship: 70,
+      baseExp: 248,
+      growthRate: GrowthRate.MEDIUM_SLOW,
+      malePercent: 50,
+      genderDiffs: false
+    }),
+    starter: SpeciesId.GEODUDE,
+    evolutions: [],
+    passives: AbilityId.SOLID_ROCK,
+    levelMoves: [
+      [1, MoveId.SAND_ATTACK],
+      [1, MoveId.TACKLE],
+      [40, MoveId.EARTHQUAKE]
+    ],
+    tms: [MoveId.FOCUS_BLAST]
+  };
+`;
+
+const REAL_UPSTREAM_MOVES_SNIPPET = `
+    new AttackMove(MoveId.THUNDERBOLT, PokemonType.ELECTRIC, MoveCategory.SPECIAL, 90, 100, 15, 10, 0, 1) //
+      .attr(StatusEffectAttr, StatusEffect.PARALYSIS),
+    new AttackMove(MoveId.TACKLE, PokemonType.NORMAL, MoveCategory.PHYSICAL, 40, 100, 35, -1, 0, 1),
+`;
+
+const REAL_UPSTREAM_ABILITIES_SNIPPET = `
+    new AbBuilder(AbilityId.STATIC, 3) //
+      .attr(PostDefendApplyStatusEffectAbAttr, 30, true, StatusEffect.PARALYSIS)
+      .bypassFaint()
+      .build(),
+    new AbBuilder(AbilityId.STURDY, 3) //
+      .attr(PreDefendFullHpEndureAbAttr)
+      .attr(BlockOneHitKOAbAttr)
+      .ignorable()
+      .build(),
+`;
+
+test('FASE 9.1: PokerogueImporter imports real upstream data with full provenance (Pikachu, Golem, Moves, Abilities)', async () => {
+  const repo = new PokerogueRepository();
+  const manifest = new PokerogueManifest();
+  const importer = new PokerogueImporter(repo, manifest);
+
+  const result = await importer.importVerticalSlice({
+    mockSpeciesRaw: REAL_UPSTREAM_GEN1_SNIPPET,
+    mockMovesRaw: REAL_UPSTREAM_MOVES_SNIPPET,
+    mockAbilitiesRaw: REAL_UPSTREAM_ABILITIES_SNIPPET
+  });
+
+  // Verify Pikachu
+  const pika = importer.getCanonicalSpecies('pikachu');
+  assert.ok(pika, 'Pikachu must be imported');
+  assert.strictEqual(pika.name, 'Pikachu');
+  assert.strictEqual(pika.speciesId, 25);
+  assert.strictEqual(pika.nationalDexId, 25);
+  assert.strictEqual(pika.type1, 'Electric');
+  assert.strictEqual(pika.type2, 'NONE');
+  assert.strictEqual(pika.baseStats.hp, 35);
+  assert.strictEqual(pika.baseStats.atk, 55);
+  assert.strictEqual(pika.baseStats.def, 40);
+  assert.strictEqual(pika.baseStats.spd, 90);
+  assert.strictEqual(pika.abilities.primary, 'Static');
+  assert.strictEqual(pika.abilities.hidden, 'Lightning Rod');
+  assert.strictEqual(pika.source.source, 'pokerogue');
+  assert.strictEqual(pika.source.sourceRepository, 'https://github.com/pagefaultgames/pokerogue');
+  assert.strictEqual(pika.source.sourceRevision, manifest.revision);
+  assert.strictEqual(pika.source.license, 'AGPL-v3.0-only');
+
+  // Verify Golem
+  const golem = importer.getCanonicalSpecies('golem');
+  assert.ok(golem, 'Golem must be imported');
+  assert.strictEqual(golem.speciesId, 76);
+  assert.strictEqual(golem.type1, 'Rock');
+  assert.strictEqual(golem.type2, 'Ground');
+  assert.strictEqual(golem.baseStats.atk, 120);
+  assert.strictEqual(golem.baseStats.def, 130);
+  assert.strictEqual(golem.abilities.primary, 'Rock Head');
+  assert.strictEqual(golem.abilities.secondary, 'Sturdy');
+
+  // Verify Moves
+  const tbolt = importer.getCanonicalMove('thunderbolt');
+  assert.ok(tbolt, 'Thunderbolt must be imported');
+  assert.strictEqual(tbolt.type, 'ELECTRIC');
+  assert.strictEqual(tbolt.power, 90);
+  assert.strictEqual(tbolt.accuracy, 100);
+  assert.strictEqual(tbolt.pp, 15);
+  assert.strictEqual(tbolt.secondaryEffects[0].status, 'PARALYSIS');
+
+  const tackle = importer.getCanonicalMove('tackle');
+  assert.ok(tackle, 'Tackle must be imported');
+  assert.strictEqual(tackle.type, 'NORMAL');
+  assert.strictEqual(tackle.power, 40);
+  assert.strictEqual(tackle.flags.contact, true);
+
+  // Verify Abilities
+  const staticAb = importer.getCanonicalAbility('static');
+  assert.ok(staticAb, 'Static ability must be imported');
+  assert.strictEqual(staticAb.trigger, 'ON_DAMAGE_RECEIVED');
+  assert.ok(staticAb.attributes.includes('PostDefendApplyStatusEffectAbAttr'));
+
+  const sturdyAb = importer.getCanonicalAbility('sturdy');
+  assert.ok(sturdyAb, 'Sturdy ability must be imported');
+  assert.ok(sturdyAb.attributes.includes('PreDefendFullHpEndureAbAttr'));
+  assert.ok(sturdyAb.attributes.includes('BlockOneHitKOAbAttr'));
+});
+
+test('FASE 9.2: PokemonSpriteResolver resolves real assets answering the 5 core questions without invented paths', () => {
+  const resolver = new PokemonSpriteResolver();
+  const reportPika = resolver.resolveAssetReport('pikachu');
+
+  // Question 1: ¿Qué asset corresponde a esta especie?
+  assert.strictEqual(reportPika.asset.pngPath, 'images/pokemon/25.png');
+  assert.strictEqual(reportPika.asset.jsonPath, 'images/pokemon/25.json');
+
+  // Question 2: ¿De dónde proviene?
+  assert.strictEqual(reportPika.origin, 'https://github.com/pagefaultgames/pokerogue-assets');
+
+  // Question 3: ¿Qué revisión lo produjo?
+  assert.strictEqual(reportPika.revision, POKEROGUE_UPSTREAM_CONFIG.assets.revision);
+
+  // Question 4: ¿Existe?
+  assert.strictEqual(reportPika.exists, true);
+
+  // Question 5: ¿Qué formato tiene?
+  assert.strictEqual(reportPika.format, 'TexturePacker JSON + PNG');
+  assert.strictEqual(reportPika.colorFormat, 'RGBA8888');
+
+  // Golem Asset check
+  const reportGolem = resolver.resolveAssetReport(76);
+  assert.strictEqual(reportGolem.exists, true);
+  assert.strictEqual(reportGolem.asset.pngPath, 'images/pokemon/76.png');
+});
+
+test('FASE 9.3: PokerogueManifest produces 100% reproducible deterministic export independent of metadata timestamps', async () => {
+  const m1 = new PokerogueManifest({
+    importedAt: '2026-01-01T00:00:00.000Z',
+    fileHashes: { 'src/b.ts': 'hash_b', 'src/a.ts': 'hash_a' }
+  });
+
+  const m2 = new PokerogueManifest({
+    importedAt: '2026-09-25T15:30:45.999Z',
+    fileHashes: { 'src/a.ts': 'hash_a', 'src/b.ts': 'hash_b' }
+  });
+
+  // Export strings must be identical byte-for-byte regardless of when they were imported
+  const exp1 = m1.getDeterministicString();
+  const exp2 = m2.getDeterministicString();
+  assert.strictEqual(exp1, exp2, 'Deterministic export string must be identical regardless of importedAt');
+
+  // Verify keys in fileHashes are sorted deterministically
+  const parsed = JSON.parse(exp1);
+  const keys = Object.keys(parsed.fileHashes);
+  assert.deepStrictEqual(keys, ['src/a.ts', 'src/b.ts']);
+});
+
+test('FASE 9.4: Fallback vertical slice fixture is clearly separated and marked as test fixture', () => {
+  assert.strictEqual(FALLBACK_VERTICAL_SLICE_FIXTURE.source, 'TEST_FIXTURE_DO_NOT_USE_IN_PRODUCTION');
+  assert.ok(FALLBACK_VERTICAL_SLICE_FIXTURE.species.some(s => s.id === 'pikachu'));
+  assert.ok(FALLBACK_VERTICAL_SLICE_FIXTURE.species.some(s => s.id === 'golem'));
+
+  const adapter = new PokerogueAdapter();
+  const fallback = adapter.getFallbackTestFixture();
+  assert.ok(fallback.species.length >= 2);
+});
+
+test('FASE 9.5: Clean failure reporting for non-existent resources without invented paths', () => {
+  const resolver = new PokemonSpriteResolver();
+  const nonExistent = resolver.resolveAssetReport('missingno_9999');
+
+  assert.strictEqual(nonExistent.exists, false);
+  assert.strictEqual(nonExistent.assetPath, null);
+  assert.ok(nonExistent.error.includes('does not exist'));
+
+  const importer = new PokerogueImporter();
+  const missingSpecies = importer.getCanonicalSpecies('non_existent_mon');
+  assert.strictEqual(missingSpecies, null);
+});
+
+test('FASE 9.6: Reimportation without duplicating data (Idempotent import)', async () => {
+  const importer = new PokerogueImporter();
+
+  await importer.importVerticalSlice({
+    mockSpeciesRaw: REAL_UPSTREAM_GEN1_SNIPPET,
+    mockMovesRaw: REAL_UPSTREAM_MOVES_SNIPPET,
+    mockAbilitiesRaw: REAL_UPSTREAM_ABILITIES_SNIPPET
+  });
+
+  assert.strictEqual(importer.importedSpecies.size, 2);
+  assert.strictEqual(importer.importedMoves.size, 2);
+  assert.strictEqual(importer.importedAbilities.size, 2);
+
+  // Re-run import
+  await importer.importVerticalSlice({
+    mockSpeciesRaw: REAL_UPSTREAM_GEN1_SNIPPET,
+    mockMovesRaw: REAL_UPSTREAM_MOVES_SNIPPET,
+    mockAbilitiesRaw: REAL_UPSTREAM_ABILITIES_SNIPPET
+  });
+
+  assert.strictEqual(importer.importedSpecies.size, 2, 'Species map size must not grow on reimport');
+  assert.strictEqual(importer.importedMoves.size, 2, 'Moves map size must not grow on reimport');
+  assert.strictEqual(importer.importedAbilities.size, 2, 'Abilities map size must not grow on reimport');
+});
+
+if (asyncTests.length > 0) {
+  await Promise.all(asyncTests);
+}
 
 console.log(`\n====================================================`);
 console.log(`  TEST RESULTS: ${passed}/${total} TESTS PASSED (100%)`);

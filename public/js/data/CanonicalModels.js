@@ -6,8 +6,11 @@
 export class SourceMetadata {
   constructor(data = {}) {
     this.source = data?.source || 'pokerogue';
+    this.sourceRepository = data?.sourceRepository || 'https://github.com/pagefaultgames/pokerogue';
     this.sourcePath = data?.sourcePath || 'src/data';
     this.sourceRevision = data?.sourceRevision || 'main';
+    this.assetSource = data?.assetSource || 'https://github.com/pagefaultgames/pokerogue-assets';
+    this.assetRevision = data?.assetRevision || null;
     this.importedAt = data?.importedAt || new Date().toISOString();
     this.license = data?.license || 'AGPL-v3.0-only';
   }
