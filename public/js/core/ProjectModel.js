@@ -2,10 +2,11 @@ import { ComponentRegistry } from '../components/ComponentRegistry.js';
 import { HistoryManager } from './HistoryManager.js';
 import { Validator } from './Validator.js';
 import { globalRNG } from './DeterministicRNG.js';
+import { SceneModel } from './SceneModel.js';
 
 /**
- * ProjectModel - Hierarchical project and screen state manager.
- * Supports N-ary Node trees, schema versioning (v1), undo/redo, and safe serialization.
+ * ProjectModel - Hierarchical project, screen, and scene state manager.
+ * Supports N-ary Node trees, schema versioning (v1 screen, v2 scene), undo/redo, and safe serialization.
  */
 export class ProjectModel {
   constructor() {
@@ -13,27 +14,33 @@ export class ProjectModel {
     this.listeners = [];
 
     this.project = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       name: 'Rogue3DS',
       version: '1.0.0',
       target: 'Nintendo 3DS',
       screens: ['ExampleScreen'],
+      scenes: ['ExampleScene'],
       settings: {
         defaultScreen: 'ExampleScreen',
         topWidth: 400,
         topHeight: 240,
         bottomWidth: 320,
         bottomHeight: 240,
-        snapToPixel: true
+        snapToPixel: true,
+        fps: 60
       }
     };
 
-    this.screensMap = new Map(); // screenId -> ScreenData
+    this.screensMap = new Map(); // screenId/sceneId -> ScreenData | SceneModel
     this.activeScreenId = 'ExampleScreen';
   }
 
   getActiveScreen() {
     return this.screensMap.get(this.activeScreenId) || null;
+  }
+
+  getActiveScene() {
+    return this.getActiveScreen();
   }
 
   setActiveScreen(screenId) {
@@ -44,9 +51,65 @@ export class ProjectModel {
     }
   }
 
+  setActiveScene(sceneId) {
+    this.setActiveScreen(sceneId);
+  }
+
+  loadScene(sceneData) {
+    if (!sceneData || !sceneData.id) return null;
+    const scene = sceneData instanceof SceneModel ? sceneData : new SceneModel(sceneData);
+    this.screensMap.set(scene.id, scene);
+    if (!this.project.screens.includes(scene.id)) {
+      this.project.screens.push(scene.id);
+    }
+    if (!this.project.scenes) this.project.scenes = [];
+    if (!this.project.scenes.includes(scene.id)) {
+      this.project.scenes.push(scene.id);
+    }
+    this.emitChange('screenLoaded', { screenId: scene.id });
+    this.emitChange('sceneLoaded', { sceneId: scene.id });
+    return scene;
+  }
+
+  createScene(sceneId, name, options = {}) {
+    const id = (sceneId || globalRNG.nextId('Scene')).trim();
+    if (this.screensMap.has(id)) {
+      throw new Error(`Scene with ID "${id}" already exists`);
+    }
+    const newScene = new SceneModel({
+      id,
+      name: name || id,
+      durationFrames: options.durationFrames ?? 60,
+      fps: options.fps ?? 60,
+      top: options.top || { width: 400, height: 240, backgroundColor: '#12141c' },
+      bottom: options.bottom || { width: 320, height: 240, backgroundColor: '#1a1824' },
+      nodes: [],
+      tracks: [],
+      markers: [],
+      audioCues: []
+    });
+    this.screensMap.set(id, newScene);
+    if (!this.project.screens.includes(id)) {
+      this.project.screens.push(id);
+    }
+    if (!this.project.scenes) this.project.scenes = [];
+    if (!this.project.scenes.includes(id)) {
+      this.project.scenes.push(id);
+    }
+    this.setActiveScreen(id);
+    this.emitChange('screenCreated', { screenId: id });
+    this.emitChange('sceneCreated', { sceneId: id });
+    return newScene;
+  }
+
   loadScreen(screenData) {
     if (!screenData || !screenData.id) return;
     
+    // If screenData has scene characteristics, load as SceneModel
+    if (screenData instanceof SceneModel || screenData.schemaVersion >= 2 || screenData.durationFrames !== undefined || screenData.nodes !== undefined) {
+      return this.loadScene(screenData);
+    }
+
     // Instantiate nodes
     const comps = (screenData.components || []).map(c => ComponentRegistry.create(c.type, c));
 

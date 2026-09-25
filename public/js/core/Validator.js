@@ -67,14 +67,14 @@ export class Validator {
       }
 
       // 2. Structure: Target screen
-      if (comp.screen !== 'top' && comp.screen !== 'bottom') {
+      if (comp.screen !== 'top' && comp.screen !== 'bottom' && comp.screen !== 'global') {
         issues.push({
           category: 'Structure',
           level: 'error',
           componentId: comp.id,
           property: 'screen',
           value: comp.screen,
-          message: `Screen target must be 'top' or 'bottom'. Found "${comp.screen}".`
+          message: `Screen target must be 'top', 'bottom', or 'global'. Found "${comp.screen}".`
         });
       }
 

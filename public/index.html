@@ -83,61 +83,93 @@
 
     <!-- MAIN WORKSPACE -->
     <main class="studio-main" id="ui_studio_view">
-      <!-- LEFT SIDEBAR: TOOLBOX & HIERARCHY -->
+      <!-- LEFT SIDEBAR: TOOLBOX, ASSETS & HIERARCHY -->
       <aside class="studio-sidebar">
-        <!-- TOOLBOX PANEL -->
-        <div class="toolbox-panel">
-          <div class="toolbox-title">PokéRogue Toolbox</div>
-          <div class="toolbox-items">
-            <button id="btn_add_box" class="tool-item" title="Add PokéRogue Styled Box Frame">
-              <span class="tool-icon">🔲</span>
-              <div class="tool-desc">
-                <span class="tool-name">RogueBox</span>
-                <span class="tool-subtitle">Beveled styled panel</span>
-              </div>
-            </button>
+        <!-- SIDEBAR TABS -->
+        <div class="sidebar-tabs">
+          <button id="tab_assets" class="sidebar-tab active" title="Visual Asset Library">🖼️ Assets</button>
+          <button id="tab_toolbox" class="sidebar-tab" title="Scene Graph Components">🧰 Toolbox</button>
+          <button id="tab_layers" class="sidebar-tab" title="Scene Hierarchy & Layers">📑 Layers</button>
+        </div>
 
-            <button id="btn_add_text" class="tool-item" title="Add Crisp Pixel Text">
-              <span class="tool-icon">🔤</span>
-              <div class="tool-desc">
-                <span class="tool-name">PixelText</span>
-                <span class="tool-subtitle">Bitmap font string</span>
-              </div>
-            </button>
+        <!-- TAB 1: ASSET BROWSER PANEL -->
+        <div class="sidebar-tab-content" id="panel_assets">
+          <div id="asset_browser_content" style="height: 100%; display: flex; flex-direction: column;"></div>
+        </div>
 
-            <button id="btn_add_button" class="tool-item" title="Add Interactive Touch / Focus Button">
-              <span class="tool-icon">🔘</span>
-              <div class="tool-desc">
-                <span class="tool-name">TouchButton</span>
-                <span class="tool-subtitle">Interactive button</span>
-              </div>
-            </button>
+        <!-- TAB 2: TOOLBOX PANEL -->
+        <div class="sidebar-tab-content" id="panel_toolbox" style="display: none;">
+          <div class="toolbox-panel" style="border-bottom: none; overflow-y: auto;">
+            <div class="toolbox-title">2D Scene Elements</div>
+            <div class="toolbox-items">
+              <button id="btn_add_image" class="tool-item" title="Add 2D Image / Sprite Texture">
+                <span class="tool-icon">🖼️</span>
+                <div class="tool-desc">
+                  <span class="tool-name">Image</span>
+                  <span class="tool-subtitle">Texture / Sprite with flips & tint</span>
+                </div>
+              </button>
 
-            <button id="btn_add_healthbar" class="tool-item" title="Add Data-Bound Health Bar">
-              <span class="tool-icon">💚</span>
-              <div class="tool-desc">
-                <span class="tool-name">HealthBar</span>
-                <span class="tool-subtitle">Dynamic Pokémon HP</span>
-              </div>
-            </button>
+              <button id="btn_add_pokemon" class="tool-item" title="Add Declarative PokéRogue Pokémon">
+                <span class="tool-icon">⚡</span>
+                <div class="tool-desc">
+                  <span class="tool-name">PokemonSprite</span>
+                  <span class="tool-subtitle">Declarative sprite & 3DS t3x</span>
+                </div>
+              </button>
 
-            <button id="btn_add_movebutton" class="tool-item" title="Add Bound PokéRogue Move Button">
-              <span class="tool-icon">⚡</span>
-              <div class="tool-desc">
-                <span class="tool-name">MoveButton</span>
-                <span class="tool-subtitle">Move & PP bound</span>
-              </div>
-            </button>
+              <button id="btn_add_box" class="tool-item" title="Add PokéRogue Styled Box Frame">
+                <span class="tool-icon">🔲</span>
+                <div class="tool-desc">
+                  <span class="tool-name">RogueBox</span>
+                  <span class="tool-subtitle">Beveled styled panel</span>
+                </div>
+              </button>
+
+              <button id="btn_add_text" class="tool-item" title="Add Crisp Pixel Text">
+                <span class="tool-icon">🔤</span>
+                <div class="tool-desc">
+                  <span class="tool-name">PixelText</span>
+                  <span class="tool-subtitle">Bitmap font string</span>
+                </div>
+              </button>
+
+              <button id="btn_add_button" class="tool-item" title="Add Interactive Touch / Focus Button">
+                <span class="tool-icon">🔘</span>
+                <div class="tool-desc">
+                  <span class="tool-name">TouchButton</span>
+                  <span class="tool-subtitle">Interactive button</span>
+                </div>
+              </button>
+
+              <button id="btn_add_healthbar" class="tool-item" title="Add Data-Bound Health Bar">
+                <span class="tool-icon">💚</span>
+                <div class="tool-desc">
+                  <span class="tool-name">HealthBar</span>
+                  <span class="tool-subtitle">Dynamic Pokémon HP</span>
+                </div>
+              </button>
+
+              <button id="btn_add_movebutton" class="tool-item" title="Add Bound PokéRogue Move Button">
+                <span class="tool-icon">⚡</span>
+                <div class="tool-desc">
+                  <span class="tool-name">MoveButton</span>
+                  <span class="tool-subtitle">Move & PP bound</span>
+                </div>
+              </button>
+            </div>
           </div>
         </div>
 
-        <!-- HIERARCHY / LAYERS PANEL -->
-        <div class="sidebar-header">
-          <span>Screen Hierarchy</span>
-          <span style="font-size: 10px; color: var(--text-dim);">Layers</span>
-        </div>
-        <div class="hierarchy-container" id="hierarchy_content">
-          <!-- Populated by Hierarchy.js -->
+        <!-- TAB 3: HIERARCHY / LAYERS PANEL -->
+        <div class="sidebar-tab-content" id="panel_layers" style="display: none;">
+          <div class="sidebar-header">
+            <span>Scene Hierarchy</span>
+            <span style="font-size: 10px; color: var(--text-dim);">Layers</span>
+          </div>
+          <div class="hierarchy-container" id="hierarchy_content">
+            <!-- Populated by Hierarchy.js -->
+          </div>
         </div>
       </aside>
 

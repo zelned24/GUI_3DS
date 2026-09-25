@@ -154,13 +154,69 @@ class MoveButtonExporter extends BaseComponentExporter {
   }
 }
 
+class ImageExporter extends BaseComponentExporter {
+  getIncludes() {
+    return ['#include "ui/image.hpp"'];
+  }
+
+  getMember(comp, varName) {
+    return `std::unique_ptr<Image> ${varName};`;
+  }
+
+  getInitialization(comp, varName) {
+    const x = `${comp.x}.0f`;
+    const y = `${comp.y}.0f`;
+    const w = `${comp.width}.0f`;
+    const h = `${comp.height}.0f`;
+    const props = comp.properties || {};
+    const assetId = CodeGenerator.escapeString(props.asset || 'bg_arena_plains');
+    const flipX = Boolean(props.flipX);
+    const flipY = Boolean(props.flipY);
+
+    const lines = [
+      `    ${varName} = std::make_unique<Image>(${x}, ${y}, ${w}, ${h}, "${assetId}");`
+    ];
+    if (flipX || flipY) {
+      lines.push(`    ${varName}->setFlip(${flipX ? 'true' : 'false'}, ${flipY ? 'true' : 'false'});`);
+    }
+    return lines;
+  }
+}
+
+class PokemonSpriteExporter extends BaseComponentExporter {
+  getIncludes() {
+    return ['#include "pokemon/pokemon_sprite.hpp"'];
+  }
+
+  getMember(comp, varName) {
+    return `std::unique_ptr<PokemonSprite> ${varName};`;
+  }
+
+  getInitialization(comp, varName) {
+    const x = `${comp.x}.0f`;
+    const y = `${comp.y}.0f`;
+    const props = comp.properties || {};
+    const dexId = Number.isInteger(props.nationalDexId) ? props.nationalDexId : 25;
+    const facing = CodeGenerator.escapeString(props.facing || 'front');
+    const shiny = Boolean(props.shiny);
+
+    return [
+      `    ${varName} = std::make_unique<PokemonSprite>(${x}, ${y}, ${dexId}, "${facing}", ${shiny ? 'true' : 'false'});`
+    ];
+  }
+}
+
 export class CodeGenerator {
   static exporters = new Map([
     ['RogueBox', new RogueBoxExporter()],
     ['PixelText', new PixelTextExporter()],
     ['TouchButton', new TouchButtonExporter()],
     ['HealthBar', new HealthBarExporter()],
-    ['MoveButton', new MoveButtonExporter()]
+    ['MoveButton', new MoveButtonExporter()],
+    ['Image', new ImageExporter()],
+    ['ImageNode', new ImageExporter()],
+    ['PokemonSprite', new PokemonSpriteExporter()],
+    ['PokemonSpriteNode', new PokemonSpriteExporter()]
   ]);
 
   /**

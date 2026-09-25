@@ -10,6 +10,11 @@ import { CodeGenerator } from '../public/js/generator/CodeGenerator.js';
 import { UINode } from '../public/js/core/UINode.js';
 import { Transform } from '../public/js/core/Transform.js';
 import { Props, PropertyTypes } from '../public/js/core/PropertySystem.js';
+import { SceneModel } from '../public/js/core/SceneModel.js';
+import { ImageNode } from '../public/js/components/ImageNode.js';
+import { PokemonSpriteNode } from '../public/js/components/PokemonSpriteNode.js';
+import { GroupNode } from '../public/js/components/GroupNode.js';
+import { AssetResolver, assetResolver } from '../public/js/data/AssetResolver.js';
 import { PokerogueAdapter } from '../public/js/data/PokerogueAdapter.js';
 import { dataManager } from '../public/js/data/DataManager.js';
 import { PokemonBattleData, BattleState } from '../public/js/battle/BattleState.js';
@@ -1118,6 +1123,288 @@ test('MILESTONE 13.4: Complete playable loop simulation (Boot -> Setup -> Wave 1
   assert.strictEqual(shell.currentState, AppStates.TITLE);
 
   shell.destroy();
+});
+
+// -------------------------------------------------------------
+// BETA-UI-1: SCENE GRAPH + ASSET NODE AUTOMATED TEST SUITE
+// -------------------------------------------------------------
+test('BETA-UI-1.1: SceneModel represents dual-screen composition with 60 FPS, durationFrames, tracks, markers, audioCues', () => {
+  const scene = new SceneModel({
+    id: 'IntroBattleScene',
+    name: 'Intro Battle Scene',
+    durationFrames: 120,
+    fps: 60,
+    top: { backgroundColor: '#10141f' },
+    bottom: { backgroundColor: '#18121f' }
+  });
+
+  assert.strictEqual(scene.id, 'IntroBattleScene');
+  assert.strictEqual(scene.durationFrames, 120);
+  assert.strictEqual(scene.fps, 60);
+  assert.strictEqual(scene.top.width, 400);
+  assert.strictEqual(scene.top.height, 240);
+  assert.strictEqual(scene.bottom.width, 320);
+  assert.strictEqual(scene.bottom.height, 240);
+
+  // Add nodes to TOP, BOTTOM, and GLOBAL
+  const bgNode = ComponentRegistry.create('Image', {
+    id: 'bg_plains',
+    name: 'Plains Arena',
+    screen: 'top',
+    x: 0,
+    y: 0,
+    width: 400,
+    height: 240,
+    properties: { asset: 'bg_arena_plains', fit: 'stretch' }
+  });
+
+  const pikaNode = ComponentRegistry.create('PokemonSprite', {
+    id: 'pikachu_sprite',
+    name: 'Pikachu Player',
+    screen: 'top',
+    x: 60,
+    y: 120,
+    width: 64,
+    height: 64,
+    properties: { species: 'Pikachu', nationalDexId: 25, facing: 'back' }
+  });
+
+  const fadeOverlay = ComponentRegistry.create('Image', {
+    id: 'screen_fade',
+    name: 'Screen Fade',
+    screen: 'global',
+    x: 0,
+    y: 0,
+    width: 400,
+    height: 240,
+    properties: { asset: 'ui_fade', tint: '#000000' }
+  });
+
+  scene.addNode(bgNode);
+  scene.addNode(pikaNode);
+  scene.addNode(fadeOverlay);
+
+  assert.strictEqual(scene.nodes.length, 3);
+  assert.strictEqual(scene.getNodesByScreen('top').length, 2);
+  assert.strictEqual(scene.getNodesByScreen('global').length, 1);
+  assert.strictEqual(scene.getNode('pikachu_sprite').properties.nationalDexId, 25);
+
+  // Markers & Audio cues
+  const marker = scene.addMarker({ frame: 30, name: 'PikachuEntrance', type: 'Event' });
+  const cue = scene.addAudioCue({ frame: 30, asset: 'sfx_pikachu_cry', volume: 0.8, channel: 1 });
+
+  assert.strictEqual(scene.markers.length, 1);
+  assert.strictEqual(scene.markers[0].frame, 30);
+  assert.strictEqual(scene.audioCues.length, 1);
+  assert.strictEqual(scene.audioCues[0].asset, 'sfx_pikachu_cry');
+
+  // Serialization & Deserialization
+  const json = scene.toJSON();
+  assert.strictEqual(json.schemaVersion, 2);
+  assert.strictEqual(json.durationFrames, 120);
+  assert.strictEqual(json.nodes.length, 3);
+
+  const restored = SceneModel.fromJSON(json);
+  assert.strictEqual(restored.id, 'IntroBattleScene');
+  assert.strictEqual(restored.nodes.length, 3);
+  assert.strictEqual(restored.nodes[1].type, 'PokemonSprite');
+});
+
+test('BETA-UI-1.2: ImageNode handles asset binding, flips, tint, blendMode, and spatial transforms', () => {
+  const img = ComponentRegistry.create('Image', {
+    id: 'forest_bg',
+    screen: 'top',
+    x: 0,
+    y: 0,
+    width: 400,
+    height: 240,
+    properties: {
+      asset: 'bg_arena_forest',
+      flipX: true,
+      flipY: false,
+      tint: '#ffffff',
+      blendMode: 'normal',
+      fit: 'cover'
+    }
+  });
+
+  assert.strictEqual(img instanceof ImageNode, true);
+  assert.strictEqual(img.properties.asset, 'bg_arena_forest');
+  assert.strictEqual(img.properties.flipX, true);
+  assert.strictEqual(img.properties.flipY, false);
+  assert.strictEqual(img.properties.fit, 'cover');
+
+  // Check static schema
+  const schema = ImageNode.schema;
+  assert.strictEqual(schema.type, 'Image');
+  assert.ok(schema.properties.asset);
+  assert.ok(schema.properties.flipX);
+  assert.ok(schema.properties.flipY);
+  assert.ok(schema.properties.fit);
+
+  // Check drawing in headless canvas context (does not throw)
+  const fakeCtx = {
+    save: () => {},
+    restore: () => {},
+    translate: () => {},
+    scale: () => {},
+    rotate: () => {},
+    fillRect: () => {},
+    strokeRect: () => {},
+    fillText: () => {}
+  };
+  assert.doesNotThrow(() => img.render(fakeCtx));
+});
+
+test('BETA-UI-1.3: PokemonSpriteNode binds declarative PokéRogue properties and resolves real assets without fictitious paths', () => {
+  const pikaSprite = ComponentRegistry.create('PokemonSprite', {
+    id: 'pika_node',
+    screen: 'top',
+    x: 50,
+    y: 75,
+    width: 64,
+    height: 64,
+    properties: {
+      species: 'Pikachu',
+      nationalDexId: 25,
+      form: 'normal',
+      gender: 'male',
+      shiny: true,
+      facing: 'front',
+      animation: 'idle'
+    }
+  });
+
+  assert.strictEqual(pikaSprite instanceof PokemonSpriteNode, true);
+  assert.strictEqual(pikaSprite.properties.nationalDexId, 25);
+  assert.strictEqual(pikaSprite.properties.shiny, true);
+  assert.strictEqual(pikaSprite.properties.facing, 'front');
+
+  // Asset resolution through real resolver (commit 056a1f408f26a3be4fef243f7462cb43608c7928)
+  const res = pikaSprite.resolveAsset();
+  assert.strictEqual(res.exists, true);
+  assert.strictEqual(res.speciesId, 25);
+  assert.strictEqual(res.assetPaths.image, 'images/pokemon/25.png');
+  assert.strictEqual(res.target3DS.t3xPath, 'romfs/sprites/pokemon/25.t3x');
+  assert.strictEqual(res.target3DS.format, 'RGBA4444');
+
+  // Test non-indexed species failure reporting without inventing fictitious paths
+  const unindexed = ComponentRegistry.create('PokemonSprite', {
+    id: 'unknown_pkmn',
+    properties: { species: 'MissingNo', nationalDexId: 9999 }
+  });
+  const unres = unindexed.resolveAsset();
+  assert.strictEqual(unres.exists, false);
+  assert.strictEqual(unres.assetPaths, null);
+  assert.ok(unres.error.includes('not indexed or does not exist'));
+});
+
+test('BETA-UI-1.4: GroupNode organizes hierarchical children with combined spatial transformations', () => {
+  const group = ComponentRegistry.create('Group', {
+    id: 'battle_hud_group',
+    screen: 'top',
+    x: 20,
+    y: 20,
+    width: 200,
+    height: 80
+  });
+
+  assert.strictEqual(group instanceof GroupNode, true);
+  assert.strictEqual(group.type, 'Group');
+
+  const pika = ComponentRegistry.create('PokemonSprite', {
+    id: 'group_pika',
+    parent: 'battle_hud_group',
+    x: 10,
+    y: 10,
+    properties: { nationalDexId: 25 }
+  });
+
+  const scene = new SceneModel({ id: 'group_test' });
+  scene.addNode(group);
+  scene.addNode(pika);
+
+  assert.strictEqual(group.children.includes('group_pika'), true);
+  assert.strictEqual(pika.parent, 'battle_hud_group');
+
+  // World transform calculation traversing group parent
+  const world = pika.getWorldTransform(scene);
+  assert.strictEqual(world.x, 30); // 20 + 10
+  assert.strictEqual(world.y, 30); // 20 + 10
+});
+
+test('BETA-UI-1.5: AssetResolver catalogs real PokéRogue assets, categories, and generates node configs', () => {
+  const cats = assetResolver.getCategories();
+  assert.ok(cats.length >= 5);
+  assert.ok(cats.some(c => c.id === 'pokemon'));
+  assert.ok(cats.some(c => c.id === 'backgrounds'));
+  assert.ok(cats.some(c => c.id === 'ui'));
+
+  // Search by query
+  const pikaResults = assetResolver.search('Pikachu');
+  assert.ok(pikaResults.length > 0);
+  assert.strictEqual(pikaResults[0].nationalDexId, 25);
+  assert.strictEqual(pikaResults[0].defaultComponent, 'PokemonSprite');
+
+  // Search by category
+  const bgResults = assetResolver.search('', 'backgrounds');
+  assert.ok(bgResults.length >= 4);
+  assert.strictEqual(bgResults[0].defaultComponent, 'Image');
+  assert.strictEqual(bgResults[0].dimensions.width, 400);
+  assert.strictEqual(bgResults[0].dimensions.height, 240);
+
+  // Generate node data for dragging and dropping onto canvas
+  const plainsNodeData = assetResolver.createNodeData('bg_arena_plains', { screen: 'top' });
+  assert.strictEqual(plainsNodeData.type, 'Image');
+  assert.strictEqual(plainsNodeData.screen, 'top');
+  assert.strictEqual(plainsNodeData.properties.asset, 'bg_arena_plains');
+  assert.strictEqual(plainsNodeData.metadata.target3DS.format, 'RGB565');
+
+  const charizardNodeData = assetResolver.createNodeData('pkmn_006', { screen: 'top', x: 100, y: 50 });
+  assert.strictEqual(charizardNodeData.type, 'PokemonSprite');
+  assert.strictEqual(charizardNodeData.properties.nationalDexId, 6);
+  assert.strictEqual(charizardNodeData.x, 100);
+  assert.strictEqual(charizardNodeData.y, 50);
+});
+
+test('BETA-UI-1.6: CodeGenerator exports Image and PokemonSprite to valid C++ with Citro2D targets', () => {
+  const scene = new SceneModel({
+    id: 'SceneExportTest',
+    name: 'Scene Export Test'
+  });
+
+  const bg = ComponentRegistry.create('Image', {
+    id: 'bg_plains',
+    screen: 'top',
+    x: 0,
+    y: 0,
+    width: 400,
+    height: 240,
+    properties: { asset: 'bg_arena_plains', flipX: true, flipY: false }
+  });
+
+  const pika = ComponentRegistry.create('PokemonSprite', {
+    id: 'pikachu_player',
+    screen: 'top',
+    x: 60,
+    y: 120,
+    width: 64,
+    height: 64,
+    properties: { species: 'Pikachu', nationalDexId: 25, facing: 'back', shiny: false }
+  });
+
+  scene.addNode(bg);
+  scene.addNode(pika);
+
+  const generated = CodeGenerator.generate(scene);
+  assert.ok(generated.hpp.includes('#include "ui/image.hpp"'));
+  assert.ok(generated.hpp.includes('#include "pokemon/pokemon_sprite.hpp"'));
+  assert.ok(generated.hpp.includes('std::unique_ptr<Image> m_bg_plains;'));
+  assert.ok(generated.hpp.includes('std::unique_ptr<PokemonSprite> m_pikachu_player;'));
+
+  assert.ok(generated.cpp.includes('m_bg_plains = std::make_unique<Image>(0.0f, 0.0f, 400.0f, 240.0f, "bg_arena_plains");'));
+  assert.ok(generated.cpp.includes('m_bg_plains->setFlip(true, false);'));
+  assert.ok(generated.cpp.includes('m_pikachu_player = std::make_unique<PokemonSprite>(60.0f, 120.0f, 25, "back", false);'));
 });
 
 async function runAllTests() {

@@ -3,6 +3,9 @@ import { PixelText } from './PixelText.js';
 import { TouchButton } from './TouchButton.js';
 import { HealthBar } from './HealthBar.js';
 import { MoveButton } from './MoveButton.js';
+import { ImageNode } from './ImageNode.js';
+import { PokemonSpriteNode } from './PokemonSpriteNode.js';
+import { GroupNode } from './GroupNode.js';
 
 /**
  * ComponentRegistry - Registry for instantiating and describing 3DS UI components & nodes.
@@ -47,6 +50,30 @@ export class ComponentRegistry {
 }
 
 // Register components with rich metadata
+ComponentRegistry.register('Image', ImageNode, {
+  name: 'Image',
+  category: 'Visual',
+  icon: '🖼️',
+  description: '2D Sprite / Texture image element for Nintendo 3DS screens'
+});
+ComponentRegistry.register('ImageNode', ImageNode);
+
+ComponentRegistry.register('PokemonSprite', PokemonSpriteNode, {
+  name: 'Pokémon Sprite',
+  category: 'PokéRogue',
+  icon: '⚡',
+  description: 'Declarative PokéRogue Pokémon sprite with atlas resolution and 3DS t3x targeting'
+});
+ComponentRegistry.register('PokemonSpriteNode', PokemonSpriteNode);
+
+ComponentRegistry.register('Group', GroupNode, {
+  name: 'Group',
+  category: 'Containers',
+  icon: '📁',
+  description: 'Hierarchical node container for organizing child elements'
+});
+ComponentRegistry.register('GroupNode', GroupNode);
+
 ComponentRegistry.register('RogueBox', RogueBox, {
   name: 'Rogue Box',
   category: 'Containers',
@@ -81,4 +108,5 @@ ComponentRegistry.register('MoveButton', MoveButton, {
   icon: '⚡',
   description: 'Battle command button bound to Pokémon move data'
 });
+
 

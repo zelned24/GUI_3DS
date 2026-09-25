@@ -300,7 +300,7 @@ export class CanvasRenderer {
 
     // Sort by zIndex
     const comps = screen.components
-      .filter(c => c.screen === screenType && c.visible !== false)
+      .filter(c => (c.screen === screenType || c.screen === 'global') && c.visible !== false)
       .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
 
     for (const comp of comps) {
@@ -436,5 +436,45 @@ export class CanvasRenderer {
       this.zoom = Math.max(0.5, Math.min(6, parseFloat((this.zoom + delta).toFixed(2))));
       this.render();
     }, { passive: false });
+
+    // Drag and Drop from Asset Browser or external palette
+    this.canvas.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+
+    this.canvas.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const rawData = e.dataTransfer.getData('application/json');
+      if (!rawData) return;
+
+      try {
+        const nodeData = JSON.parse(rawData);
+        const hit = this.windowToLogical(e.clientX, e.clientY);
+        const targetScreen = hit.screen || 'top';
+        const w = nodeData.width || 64;
+        const h = nodeData.height || 64;
+
+        const posX = hit.localX !== undefined ? Math.round(hit.localX - w / 2) : 0;
+        const posY = hit.localY !== undefined ? Math.round(hit.localY - h / 2) : 0;
+
+        const screen = this.model.getActiveScreen();
+        if (!screen) return;
+
+        const comp = this.model.addComponent({
+          ...nodeData,
+          screen: targetScreen,
+          x: posX,
+          y: posY
+        });
+
+        if (comp) {
+          this.selection.select(comp);
+        }
+        this.render();
+      } catch (err) {
+        console.error('Failed to instantiate dropped asset node:', err);
+      }
+    });
   }
 }

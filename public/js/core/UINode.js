@@ -132,9 +132,24 @@ export class UINode {
     ctx.save();
     ctx.globalAlpha = (ctx.globalAlpha || 1.0) * this.opacity;
     ctx.translate(this.x, this.y);
+
+    const hasPivot = (this.transform.pivotX !== 0 || this.transform.pivotY !== 0);
+    const pivotPxX = this.width * (this.transform.pivotX || 0);
+    const pivotPxY = this.height * (this.transform.pivotY || 0);
+
+    if (hasPivot) {
+      ctx.translate(pivotPxX, pivotPxY);
+    }
     if (this.transform.rotation !== 0) {
       ctx.rotate((this.transform.rotation * Math.PI) / 180);
     }
+    if (this.transform.scaleX !== 1.0 || this.transform.scaleY !== 1.0) {
+      ctx.scale(this.transform.scaleX, this.transform.scaleY);
+    }
+    if (hasPivot) {
+      ctx.translate(-pivotPxX, -pivotPxY);
+    }
+
     this.draw(ctx, options);
     ctx.restore();
   }

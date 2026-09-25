@@ -10,6 +10,7 @@ import { CodeGenerator } from './generator/CodeGenerator.js';
 import { DataStudioUI } from './data/DataStudioUI.js';
 import { BattleLabUI } from './battle/BattleLabUI.js';
 import { AppShell, AppStates } from './shell/AppShell.js';
+import { AssetBrowser } from './editor/AssetBrowser.js';
 
 /**
  * StudioApp - Main Studio IDE Application orchestrator.
@@ -36,7 +37,7 @@ class StudioApp {
     this.validationModal = document.getElementById('validation_modal');
 
     // 5-Pillar Studios: Data Studio & Battle Lab
-    this.currentMode = 'game';
+    this.currentMode = 'ui';
     this.dataStudioContainer = document.getElementById('data_studio_view');
     this.dataStudio = new DataStudioUI(this.dataStudioContainer);
 
@@ -46,13 +47,20 @@ class StudioApp {
     // Primary 3DS Game Player Engine (AppShell)
     this.gameTopContainer = document.getElementById('game_top_screen');
     this.gameBottomContainer = document.getElementById('game_bottom_screen');
-    this.appShell = new AppShell({
-      topContainer: this.gameTopContainer,
-      bottomContainer: this.gameBottomContainer,
-      onEnterDebug: () => {
-        this.setStudioMode('battle');
-      }
-    });
+    if (this.gameTopContainer && this.gameBottomContainer) {
+      this.appShell = new AppShell({
+        topContainer: this.gameTopContainer,
+        bottomContainer: this.gameBottomContainer,
+        onEnterDebug: () => {
+          this.setStudioMode('battle');
+        }
+      });
+    }
+
+    this.assetBrowserContainer = document.getElementById('asset_browser_content');
+    if (this.assetBrowserContainer) {
+      this.assetBrowser = new AssetBrowser(this.assetBrowserContainer, this.model, this.canvasRenderer);
+    }
 
     this._init();
   }
@@ -376,6 +384,57 @@ class StudioApp {
   }
 
   _bindToolbar() {
+    // Sidebar Tabs switching (Assets, Toolbox, Layers)
+    const tabAssets = document.getElementById('tab_assets');
+    const tabToolbox = document.getElementById('tab_toolbox');
+    const tabLayers = document.getElementById('tab_layers');
+    const panelAssets = document.getElementById('panel_assets');
+    const panelToolbox = document.getElementById('panel_toolbox');
+    const panelLayers = document.getElementById('panel_layers');
+
+    const switchSidebarTab = (activeTab, activePanel) => {
+      [tabAssets, tabToolbox, tabLayers].forEach(t => t?.classList.remove('active'));
+      [panelAssets, panelToolbox, panelLayers].forEach(p => { if (p) p.style.display = 'none'; });
+      activeTab?.classList.add('active');
+      if (activePanel) activePanel.style.display = 'flex';
+    };
+
+    tabAssets?.addEventListener('click', () => switchSidebarTab(tabAssets, panelAssets));
+    tabToolbox?.addEventListener('click', () => switchSidebarTab(tabToolbox, panelToolbox));
+    tabLayers?.addEventListener('click', () => switchSidebarTab(tabLayers, panelLayers));
+
+    // Add 2D Scene Image Component
+    document.getElementById('btn_add_image')?.addEventListener('click', () => {
+      const activeScreenType = this.canvasRenderer.viewMode === 'bottom' ? 'bottom' : 'top';
+      const comp = this.model.addComponent({
+        type: 'Image',
+        screen: activeScreenType,
+        x: 40,
+        y: 40,
+        width: 128,
+        height: 80,
+        properties: { asset: 'bg_arena_plains', fit: 'stretch' }
+      });
+      this.selection.select(comp.id);
+      this.canvasRenderer.render();
+    });
+
+    // Add Declarative PokéRogue Pokémon Sprite
+    document.getElementById('btn_add_pokemon')?.addEventListener('click', () => {
+      const activeScreenType = this.canvasRenderer.viewMode === 'bottom' ? 'bottom' : 'top';
+      const comp = this.model.addComponent({
+        type: 'PokemonSprite',
+        screen: activeScreenType,
+        x: 60,
+        y: 50,
+        width: 96,
+        height: 96,
+        properties: { species: 'Pikachu', nationalDexId: 25, facing: 'front', shiny: false }
+      });
+      this.selection.select(comp.id);
+      this.canvasRenderer.render();
+    });
+
     // Add component buttons
     document.getElementById('btn_add_box')?.addEventListener('click', () => {
       const activeScreenType = this.canvasRenderer.viewMode === 'bottom' ? 'bottom' : 'top';
