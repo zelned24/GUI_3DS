@@ -45,10 +45,33 @@ export class NativeParityRunner {
     const projectInclude = path.join(rootDir, 'project', 'include');
     const buildInclude = path.join(buildDir, 'include');
 
-    // Find clang binary
-    const clangExe = path.join(rootDir, 'node_modules', 'clang-wasm-win64', 'clang.exe');
-    if (!fs.existsSync(clangExe)) {
-      throw new Error(`Clang executable not found at: ${clangExe}`);
+    // Find clang binary across platforms
+    let clangExe = null;
+    const isWin = process.platform === 'win32';
+    const binName = isWin ? 'clang.exe' : 'clang';
+    const candidates = [
+      path.join(rootDir, 'node_modules', '.bin', binName),
+      path.join(rootDir, 'node_modules', 'clang-wasm-win64', 'clang.exe'),
+      path.join(rootDir, 'node_modules', 'clang-wasm-linux-x64', 'clang'),
+      path.join(rootDir, 'node_modules', 'clang-wasm-linux-arm64', 'clang'),
+      path.join(rootDir, 'node_modules', 'clang-wasm-darwin-x64', 'clang'),
+      path.join(rootDir, 'node_modules', 'clang-wasm-darwin-arm64', 'clang')
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) {
+        clangExe = c;
+        break;
+      }
+    }
+    if (!clangExe) {
+      try {
+        const whichCmd = isWin ? 'where' : 'which';
+        const out = execFileSync(whichCmd, ['clang'], { stdio: 'pipe' }).toString().trim().split(/\r?\n/)[0];
+        if (out && fs.existsSync(out)) clangExe = out;
+      } catch (e) {}
+    }
+    if (!clangExe) {
+      throw new Error(`Clang executable not found in node_modules or PATH for platform ${process.platform}`);
     }
 
     const compileArgs = [

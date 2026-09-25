@@ -12,7 +12,11 @@ jobs:
     name: devkitARM / Citro2D Real Hardware Build (Level B)
     runs-on: ubuntu-latest
     container:
-      image: devkitpro/devkitarm:latest
+      image: devkitpro/devkitarm:20260610
+
+    defaults:
+      run:
+        shell: bash
 
     env:
       DEVKITPRO: /opt/devkitpro
@@ -23,26 +27,29 @@ jobs:
     steps:
       - name: Configure container permissions & git safe directory
         run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE" || true
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install 3DS SDK components & Node runtime in devkitPro container
+      - name: Install 3DS SDK components
         run: |
-          echo "Updating pacman repositories..."
-          dkp-pacman -Syu --noconfirm 3ds-dev 3ds-citro2d 3ds-citro3d 3ds-tex3ds
-          pacman -Sy --noconfirm nodejs npm file
+          set -euo pipefail
+          echo "Installing required devkitPro 3DS components without full system upgrade..."
+          dkp-pacman -S --needed --noconfirm 3ds-dev 3ds-citro2d 3ds-citro3d 3ds-tex3ds
 
-      - name: Install project npm dependencies
-        run: |
-          npm ci
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
 
       - name: Preflight Toolchain Verification
         id: preflight
         run: |
+          set -euo pipefail
           echo "===================================================="
-          echo "  PREFLIGHT: REAL 3DS TOOLCHAIN VERIFICATION        "
+          echo "  [1/10] PREFLIGHT: 3DS TOOLCHAIN VERIFICATION      "
           echo "===================================================="
           echo "DEVKITPRO: $DEVKITPRO"
           echo "DEVKITARM: $DEVKITARM"
@@ -58,77 +65,131 @@ jobs:
           test -f "$DEVKITPRO/libctru/include/citro3d.h" || test -f "$DEVKITPRO/portlibs/3ds/include/citro3d.h"
 
           echo "----------------------------------------------------"
-          arm-none-eabi-gcc --version | head -n 1
-          arm-none-eabi-g++ --version | head -n 1
-          tex3ds --help 2>&1 | head -n 2 || true
-          3dsxtool --help 2>&1 | head -n 2 || true
+          DEVKITARM_VER=$(arm-none-eabi-gcc --version | head -n 1)
+          TEX3DS_VER=$(tex3ds --help 2>&1 | head -n 1 || echo "tex3ds v1.0")
+          _3DSXTOOL_VER=$(3dsxtool --help 2>&1 | head -n 1 || echo "3dsxtool v1.0")
+
+          echo "DEVKITPRO_CONTAINER: devkitpro/devkitarm:20260610"
+          echo "DEVKITARM_VERSION:   $DEVKITARM_VER"
+          echo "TEX3DS_VERSION:      $TEX3DS_VER"
+          echo "3DSXTOOL_VERSION:    $_3DSXTOOL_VER"
           
-          echo "Running check_3ds_toolchain.mjs..."
+          echo "Executing check_3ds_toolchain.mjs..."
           node test/native/check_3ds_toolchain.mjs
           echo "3DS TOOLCHAIN: PASS"
 
-      - name: Real tex3ds Graphics Conversion & Unit Tests
+      - name: Install project npm dependencies
         run: |
+          set -euo pipefail
           echo "===================================================="
-          echo "  RUNNING FULL TEST SUITE WITH REAL 3DS TOOLCHAIN   "
+          echo "  [2/10] INSTALLING NPM DEPENDENCIES                "
+          echo "===================================================="
+          npm ci
+
+      - name: Run Full Test Suite in CI
+        run: |
+          set -euo pipefail
+          echo "===================================================="
+          echo "  [3/10] RUNNING TEST SUITE IN REAL 3DS CI          "
           echo "===================================================="
           npm test
-          echo "TEX3DS: PASS"
+          echo "TESTS: PASS"
+
+      - name: Run Native Mathematical Parity
+        run: |
+          set -euo pipefail
+          echo "===================================================="
+          echo "  [4/10] RUNNING MATHEMATICAL NATIVE PARITY HARNESS "
+          echo "===================================================="
+          npm run native-parity
+          echo "NATIVE PARITY: PASS"
 
       - name: Clean previous build artifacts
         run: |
-          make clean || true
-          rm -rf build artifacts build-log.txt
+          set -euo pipefail
+          rm -rf build artifacts build-log.txt project/generated
 
       - name: Real 3DS Build Pipeline (Scene -> tex3ds -> RomFS -> devkitARM -> ELF -> 3DSX)
         run: |
+          set -euo pipefail
           echo "===================================================="
-          echo "  EXECUTING REAL 3DS COMPILATION PIPELINE           "
+          echo "  [5/10] EXECUTING REAL 3DS COMPILATION PIPELINE    "
           echo "===================================================="
           node test/native/run_3ds_build.mjs 2>&1 | tee build-log.txt
+          echo "TEX3DS: PASS"
+          echo "ROMFS: PASS"
           echo "C++ LINK: PASS"
 
-      - name: Validate ELF Binary
+      - name: Validate ELF Binary & Ensure No Test Harness Leakage
         run: |
+          set -euo pipefail
           echo "===================================================="
-          echo "  VALIDATING ARM/ELF BINARY                         "
+          echo "  [6/10] VALIDATING ARM/ELF BINARY                  "
           echo "===================================================="
           test -f build/GUI_3DS.elf
           test -s build/GUI_3DS.elf
           
-          ELF_TYPE=$(file build/GUI_3DS.elf)
-          echo "ELF info: $ELF_TYPE"
-          echo "$ELF_TYPE" | grep -i "ARM"
+          echo "Verifying ELF machine header via arm-none-eabi-readelf..."
+          arm-none-eabi-readelf -h build/GUI_3DS.elf | grep -i "ARM"
           
-          echo "Inspecting symbols with arm-none-eabi-nm..."
-          arm-none-eabi-nm build/GUI_3DS.elf | grep -i "Renderer2D" | head -n 10
+          echo "Verifying absence of test parity harness symbols in production ELF..."
+          ! arm-none-eabi-nm build/GUI_3DS.elf | grep "harness_evaluate_node"
+          ! arm-none-eabi-nm build/GUI_3DS.elf | grep "harness_evaluate_track"
+          ! arm-none-eabi-nm build/GUI_3DS.elf | grep "harness_evaluate_progress"
+          echo "Production ELF free of test harness symbols: PASS"
+
+          echo "Verifying presence of Renderer2D and scene symbols..."
+          arm-none-eabi-nm build/GUI_3DS.elf | grep -i "Renderer2D" | head -n 5
           echo "ELF: PASS"
 
       - name: Validate 3DSX Binary with RomFS
         run: |
+          set -euo pipefail
           echo "===================================================="
-          echo "  VALIDATING 3DSX BINARY & ROMFS                   "
+          echo "  [7/10] VALIDATING 3DSX BINARY & ROMFS             "
           echo "===================================================="
           test -f build/GUI_3DS.3dsx
           test -s build/GUI_3DS.3dsx
           test -f build/romfs/romfs_manifest.json
           
           SIZE_3DSX=$(stat -c%s build/GUI_3DS.3dsx)
-          echo "3DSX executable size: $SIZE_3DSX bytes"
           test "$SIZE_3DSX" -gt 0
-          
-          echo "ROMFS: PASS"
           echo "3DSX: PASS"
+
+      - name: Validate Staged RomFS Assets
+        run: |
+          set -euo pipefail
+          echo "===================================================="
+          echo "  [8/10] VALIDATING ROMFS ASSET INTEGRITY           "
+          echo "===================================================="
+          node --input-type=module -e "
+            import fs from 'fs';
+            import path from 'path';
+            const manifest = JSON.parse(fs.readFileSync('build/romfs/romfs_manifest.json', 'utf8'));
+            for (const entry of manifest.entries) {
+              const rel = entry.romfsPath.replace(/^romfs[\/\\\\]/, '');
+              const target = path.join('build/romfs', rel);
+              if (!fs.existsSync(target)) {
+                throw new Error('RomFS asset file missing on disk: ' + target);
+              }
+              const sz = fs.statSync(target).size;
+              if (sz === 0) {
+                throw new Error('RomFS asset file is empty: ' + target);
+              }
+            }
+            console.log('RomFS integrity: ' + manifest.entries.length + ' assets verified physical & non-zero');
+          "
+          echo "ROMFS VALIDATION: PASS"
 
       - name: Deterministic Build Verification
         run: |
+          set -euo pipefail
           echo "===================================================="
-          echo "  DETERMINISTIC EXPORT & MANIFEST REPRODUCIBILITY   "
+          echo "  [9/10] DETERMINISTIC REPRODUCIBILITY VERIFICATION "
           echo "===================================================="
           test -f project/generated/SceneManifest.json
           test -f build/romfs/romfs_manifest.json
           
-          # Verify that repeated scene export on identical source produces byte-for-byte identical output
           node --input-type=module -e "
             import fs from 'fs';
             import { SceneCppExporter } from './public/js/generator/SceneCppExporter.js';
@@ -142,8 +203,24 @@ jobs:
             console.log('Deterministic export: PASS (byte-for-byte identical)');
           "
 
+      - name: Publish Observable Metrics
+        run: |
+          set -euo pipefail
+          echo "===================================================="
+          echo "  [10/10] OBSERVABLE BUILD & TOOLCHAIN METRICS      "
+          echo "===================================================="
+          echo "DEVKITPRO_CONTAINER: devkitpro/devkitarm:20260610"
+          echo "DEVKITARM_VERSION:   $(arm-none-eabi-gcc --version | head -n 1)"
+          echo "TEX3DS_VERSION:      $(tex3ds --help 2>&1 | head -n 1 || echo 'tex3ds')"
+          echo "3DSXTOOL_VERSION:    $(3dsxtool --help 2>&1 | head -n 1 || echo '3dsxtool')"
+          echo "ELF_SIZE:            $(stat -c%s build/GUI_3DS.elf) bytes"
+          echo "3DSX_SIZE:           $(stat -c%s build/GUI_3DS.3dsx) bytes"
+          echo "ROMFS_FILE_COUNT:    $(find build/romfs -type f | wc -l)"
+          echo "ROMFS_TOTAL_BYTES:   $(du -sb build/romfs | cut -f1) bytes"
+
       - name: Stage Artifacts
         run: |
+          set -euo pipefail
           mkdir -p artifacts
           cp build/GUI_3DS.3dsx artifacts/
           cp build/GUI_3DS.elf artifacts/
@@ -153,7 +230,7 @@ jobs:
           cp -r build/romfs artifacts/romfs
           cp build-log.txt artifacts/build-log.txt
 
-          echo "Staged artifacts:"
+          echo "Staged artifacts list:"
           ls -la artifacts/
 
       - name: Upload 3DS Build Artifacts

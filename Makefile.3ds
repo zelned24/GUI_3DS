@@ -13,7 +13,7 @@ include $(DEVKITARM)/3ds_rules
 
 TARGET      := GUI_3DS
 BUILD       := build
-SOURCES     := project/src/gfx project/generated/src/screens test/native
+SOURCES     := project/src project/src/gfx project/generated/src/screens
 INCLUDES    := project/include project/generated/include $(CTRULIB)/include $(DEVKITPRO)/libctru/include $(DEVKITPRO)/portlibs/3ds/include
 ROMFS       := build/romfs
 

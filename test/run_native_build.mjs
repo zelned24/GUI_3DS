@@ -32,11 +32,34 @@ async function runNativeBuild() {
   console.log(`[1/5] ✓ Generated ${Object.keys(exportResult.files).length} C++ artifacts for ${exportResult.className}`);
 
   // 2. Locate clang compiler
-  const clangExe = path.join(rootDir, 'node_modules', 'clang-wasm-win64', 'clang.exe');
-  if (!fs.existsSync(clangExe)) {
-    throw new Error(`Compiler executable not found at: ${clangExe}`);
+  let clangExe = null;
+  const isWin = process.platform === 'win32';
+  const binName = isWin ? 'clang.exe' : 'clang';
+  const candidates = [
+    path.join(rootDir, 'node_modules', '.bin', binName),
+    path.join(rootDir, 'node_modules', 'clang-wasm-win64', 'clang.exe'),
+    path.join(rootDir, 'node_modules', 'clang-wasm-linux-x64', 'clang'),
+    path.join(rootDir, 'node_modules', 'clang-wasm-linux-arm64', 'clang'),
+    path.join(rootDir, 'node_modules', 'clang-wasm-darwin-x64', 'clang'),
+    path.join(rootDir, 'node_modules', 'clang-wasm-darwin-arm64', 'clang')
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) {
+      clangExe = c;
+      break;
+    }
   }
-  console.log(`[2/5] ✓ Compiler found: Clang LLVM`);
+  if (!clangExe) {
+    try {
+      const whichCmd = isWin ? 'where' : 'which';
+      const out = execFileSync(whichCmd, ['clang'], { stdio: 'pipe' }).toString().trim().split(/\r?\n/)[0];
+      if (out && fs.existsSync(out)) clangExe = out;
+    } catch (e) {}
+  }
+  if (!clangExe) {
+    throw new Error(`Compiler executable not found at: ${path.join(rootDir, 'node_modules', 'clang-wasm')}`);
+  }
+  console.log(`[2/5] ✓ Compiler found: Clang LLVM (${clangExe})`);
 
   // 3. Verify required files exist
   const sourceFiles = [
@@ -47,7 +70,7 @@ async function runNativeBuild() {
     path.join(genDir, 'src', 'screens', 'Scene.cpp'),
     path.join(genDir, 'src', 'screens', 'PikachuEntranceScene.cpp'),
     path.join(rootDir, 'project', 'src', 'gfx', 'renderer2d.cpp'),
-    path.join(rootDir, 'test', 'native', 'native_build_entry.cpp'),
+    path.join(rootDir, 'project', 'src', 'main.cpp'),
     path.join(rootDir, 'test', 'native', 'host_compat', 'runtime.cpp')
   ];
 

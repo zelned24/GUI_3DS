@@ -2985,6 +2985,73 @@ test('BETA-UI-3.33: Real devkitARM compilation of Renderer2D', () => {
   }
 });
 
+test('BETA-UI-3.34: Production Makefile excludes test/native harnesses', () => {
+  const makefile3ds = fs.readFileSync(path.join(__dirname, '../Makefile.3ds'), 'utf8');
+  const sourcesMatch = makefile3ds.match(/SOURCES\s*[:=]+\s*(.*)/);
+  assert.ok(sourcesMatch, 'Makefile.3ds must define SOURCES');
+  const sources = sourcesMatch[1];
+  assert.ok(!sources.includes('test/native'), 'Makefile.3ds must NOT include test/native');
+  assert.ok(sources.includes('project/src'), 'Makefile.3ds must include project/src');
+  assert.ok(sources.includes('project/generated/src/screens'), 'Makefile.3ds must include project/generated/src/screens');
+});
+
+test('BETA-UI-3.35: CI pipeline propagates make failure', () => {
+  const runBuildScript = fs.readFileSync(path.join(__dirname, 'native/run_3ds_build.mjs'), 'utf8');
+  assert.ok(runBuildScript.includes("execSync('make -f Makefile.3ds 3ds'"), 'Must invoke make -f Makefile.3ds 3ds');
+  assert.ok(runBuildScript.includes('process.exit(1)'), 'Must exit with code 1 on failure');
+
+  const buildYml = fs.readFileSync(path.join(__dirname, '../.github/workflows/build-3ds.yml'), 'utf8');
+  assert.ok(buildYml.includes('pipefail'), 'build-3ds.yml must enforce pipefail for tee pipelines');
+});
+
+test('BETA-UI-3.36: CI pipeline propagates tex3ds failure', () => {
+  const packagerCode = fs.readFileSync(path.join(__dirname, '../public/js/generator/AssetPackager.js'), 'utf8');
+  assert.ok(packagerCode.includes('err.isToolchainBlocked = true'), 'Must report isToolchainBlocked when tex3ds missing');
+  assert.ok(!packagerCode.includes('T3X_ROMFS_PAYLOAD:'), 'Must NEVER fall back to fake payload');
+});
+
+test('BETA-UI-3.37: CI artifact stage fails when ELF/3DSX missing', () => {
+  const runBuildScript = fs.readFileSync(path.join(__dirname, 'native/run_3ds_build.mjs'), 'utf8');
+  assert.ok(runBuildScript.includes('!fs.existsSync(elfPath) || fs.statSync(elfPath).size === 0'), 'Must validate ELF exists and size > 0');
+  assert.ok(runBuildScript.includes('!fs.existsSync(d3sxPath) || fs.statSync(d3sxPath).size === 0'), 'Must validate 3DSX exists and size > 0');
+
+  const buildYml = fs.readFileSync(path.join(__dirname, '../.github/workflows/build-3ds.yml'), 'utf8');
+  assert.ok(buildYml.includes('if-no-files-found: error'), 'Artifact upload must fail if required files are missing');
+});
+
+test('BETA-UI-3.38: Production target does not export parity harness symbols', () => {
+  const projectSrcDir = path.join(__dirname, '../project/src');
+  const projectGenDir = path.join(__dirname, '../project/generated');
+  
+  function scanDir(dir) {
+    let files = [];
+    if (!fs.existsSync(dir)) return files;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) files.push(...scanDir(full));
+      else if (entry.name.endsWith('.cpp') || entry.name.endsWith('.hpp')) files.push(full);
+    }
+    return files;
+  }
+
+  const productionFiles = [...scanDir(projectSrcDir), ...scanDir(projectGenDir)];
+  for (const f of productionFiles) {
+    const content = fs.readFileSync(f, 'utf8');
+    assert.ok(!content.includes('harness_evaluate_node'), `Production file ${f} must not contain harness_evaluate_node`);
+    assert.ok(!content.includes('harness_evaluate_track'), `Production file ${f} must not contain harness_evaluate_track`);
+    assert.ok(!content.includes('harness_evaluate_progress'), `Production file ${f} must not contain harness_evaluate_progress`);
+  }
+});
+
+test('BETA-UI-3.39: Pinned devkitPro container is documented', () => {
+  const buildYml = fs.readFileSync(path.join(__dirname, '../.github/workflows/build-3ds.yml'), 'utf8');
+  assert.ok(buildYml.includes('devkitpro/devkitarm:20260610'), 'build-3ds.yml must use pinned container tag 20260610');
+  assert.ok(!buildYml.includes('devkitpro/devkitarm:latest'), 'build-3ds.yml must NOT use mutable latest tag');
+
+  const readme = fs.readFileSync(path.join(__dirname, '../README.md'), 'utf8');
+  assert.ok(readme.includes('20260610'), 'README.md must document pinned container version');
+});
+
 // ====================================================
 // BETA-UI-4 — Asset Packaging, RomFS & Pipeline
 // ====================================================
@@ -3193,6 +3260,18 @@ test('BETA-UI-4.12: Full editor → 3DSX pipeline', async () => {
   const pkgRes = await packager.packageManifest(exported.manifest);
   assert.strictEqual(pkgRes.success, true);
   assert.ok(pkgRes.manifest.assetCount > 0);
+});
+
+test('BETA-UI-4.13: Real RomFS contains actual converted T3X payloads', () => {
+  const packagerCode = fs.readFileSync(path.join(__dirname, '../public/js/generator/AssetPackager.js'), 'utf8');
+  assert.ok(!packagerCode.includes('T3X_ROMFS_PAYLOAD:'), 'AssetPackager must not generate dummy payloads');
+  assert.ok(packagerCode.includes('execFileSync(tex3dsBin'), 'AssetPackager must execute tex3ds for T3X conversion');
+});
+
+test('BETA-UI-4.14: 3DSX generated from real ELF with RomFS', () => {
+  const makefile3ds = fs.readFileSync(path.join(__dirname, '../Makefile.3ds'), 'utf8');
+  assert.ok(makefile3ds.includes('3dsxtool'), 'Makefile.3ds must use 3dsxtool to pack 3DSX');
+  assert.ok(makefile3ds.includes('--romfs=$(ROMFS)'), 'Makefile.3ds must pack RomFS into 3DSX');
 });
 
 let blocked = 0;

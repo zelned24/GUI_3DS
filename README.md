@@ -338,7 +338,7 @@ Diseñado para ejecutarse en entornos donde el usuario **no posee permisos de ad
 
 ### 2. Nivel B — GitHub Actions / Official 3DS CI
 
-El gate oficial y reproducible de integración para Nintendo 3DS se ejecuta en GitHub Actions utilizando el contenedor oficial de devkitPro (`devkitpro/devkitarm`):
+El gate oficial y reproducible de integración para Nintendo 3DS se ejecuta en GitHub Actions utilizando el contenedor oficial versionado de devkitPro (`devkitpro/devkitarm:20260610`):
 
 - **Workflows:**
   - `.github/workflows/tests.yml`: Validación rápida de tests JS y paridad matemática (Level A).
