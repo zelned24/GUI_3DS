@@ -60,7 +60,12 @@ void C2D_PlainImageTint(C2D_ImageTint* tint, u32 color, float blend) {
     }
     (void)blend;
 }
-void C2D_DrawText(const C2D_Text* text, u32 flags, float x, float y, float z, float scaleX, float scaleY) {
+static int s_dummyTextBuf = 1;
+C2D_TextBuf C2D_TextBufNew(size_t maxGlyphs) { (void)maxGlyphs; return (C2D_TextBuf)&s_dummyTextBuf; }
+void C2D_TextBufDelete(C2D_TextBuf buf) { (void)buf; }
+void C2D_TextParse(C2D_Text* text, C2D_TextBuf buf, const char* str) { (void)text; (void)buf; (void)str; }
+void C2D_TextOptimize(const C2D_Text* text) { (void)text; }
+void C2D_DrawText(const C2D_Text* text, u32 flags, float x, float y, float z, float scaleX, float scaleY, ...) {
     (void)text; (void)flags; (void)x; (void)y; (void)z; (void)scaleX; (void)scaleY;
 }
 

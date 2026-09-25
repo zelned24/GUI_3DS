@@ -1,4 +1,5 @@
 #include "gfx/renderer2d.hpp"
+#include "screens/SceneAssets.hpp"
 #include <cmath>
 
 Renderer2D::Renderer2D()
@@ -150,8 +151,18 @@ void Renderer2D::drawImage(
     uint32_t tintColor
 ) {
     if (!assetId || !m_currentTarget || opacity <= 0.001f) return;
-    // In real Citro2D runtime, assetId is resolved against AssetManifest and loaded from RomFS.
-    // For direct image drawing, drawImageDirect is invoked with the decoded C2D_Image.
+
+    // Resolve asset entry from SceneAssets and AssetManifest
+    const Citro2D::AssetEntry* entry = Citro2D::findSceneAsset(assetId);
+    if (!entry || !entry->romfsPath) return;
+
+    // Load sprite sheet / texture from RomFS using official Citro2D API
+    C2D_SpriteSheet sheet = C2D_SpriteSheetLoad(entry->romfsPath);
+    if (sheet) {
+        C2D_Image img = C2D_SpriteSheetGetImage(sheet, 0);
+        drawImageDirect(img, x, y, width, height, rotation, opacity, flipX, flipY, tintColor);
+        C2D_SpriteSheetFree(sheet);
+    }
 }
 
 void Renderer2D::drawText(
@@ -160,9 +171,18 @@ void Renderer2D::drawText(
     uint32_t color,
     float opacity
 ) {
-    (void)text;
-    (void)x;
-    (void)y;
-    (void)color;
-    (void)opacity;
+    if (!text || !m_currentTarget || opacity <= 0.001f) return;
+
+    uint32_t a = (color >> 24) & 0xFF;
+    a = static_cast<uint32_t>(a * opacity);
+    uint32_t finalColor = (color & 0x00FFFFFF) | (a << 24);
+
+    C2D_TextBuf buf = C2D_TextBufNew(512);
+    if (buf) {
+        C2D_Text c2dText;
+        C2D_TextParse(&c2dText, buf, text);
+        C2D_TextOptimize(&c2dText);
+        C2D_DrawText(&c2dText, C2D_WithColor, x, y, 0.5f, 1.0f, 1.0f, finalColor);
+        C2D_TextBufDelete(buf);
+    }
 }

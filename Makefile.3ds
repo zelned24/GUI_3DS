@@ -14,7 +14,7 @@ include $(DEVKITARM)/3ds_rules
 TARGET      := GUI_3DS
 BUILD       := build
 SOURCES     := project/src/gfx project/generated/src/screens test/native
-INCLUDES    := project/include project/generated/include $(CTRULIB)/include $(DEVKITPRO)/libctru/include
+INCLUDES    := project/include project/generated/include $(CTRULIB)/include $(DEVKITPRO)/libctru/include $(DEVKITPRO)/portlibs/3ds/include
 ROMFS       := build/romfs
 
 ARCH        := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=cp15
@@ -25,9 +25,12 @@ CFLAGS      := -g -Wall -O2 -mword-relocations \
 CXXFLAGS    := $(CFLAGS) -fno-rtti -fno-exceptions -std=gnu++17
 
 ASFLAGS     := -g $(ARCH)
-LDFLAGS     := -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(BUILD)/$(TARGET).map
+LIBDIRS     := -L$(CTRULIB)/lib -L$(DEVKITPRO)/libctru/lib -L$(DEVKITPRO)/portlibs/3ds/lib
+LDFLAGS     := -specs=3dsx.specs -g $(ARCH) $(LIBDIRS) -Wl,-Map,$(BUILD)/$(TARGET).map
 
 LIBS        := -lcitro2d -lcitro3d -lctru -lm
+
+_3DSXTOOL   := $(shell which 3dsxtool 2>/dev/null || echo $(DEVKITPRO)/tools/bin/3dsxtool)
 
 CFILES      := $(foreach dir,$(SOURCES),$(wildcard $(dir)/*.c))
 CPPFILES    := $(foreach dir,$(SOURCES),$(wildcard $(dir)/*.cpp))
@@ -41,7 +44,7 @@ all: 3ds
 
 $(BUILD)/$(TARGET).3dsx: $(BUILD)/$(TARGET).elf
 	@echo "Creating 3DSX with RomFS using 3dsxtool..."
-	@3dsxtool $< $@ $(if $(wildcard $(ROMFS)),--romfs=$(ROMFS),)
+	@$(_3DSXTOOL) $< $@ $(if $(wildcard $(ROMFS)),--romfs=$(ROMFS),)
 
 $(BUILD)/$(TARGET).elf: $(OFILES)
 	@echo "Linking 3DS ELF..."

@@ -28,6 +28,9 @@ for (const ev of envVars) {
 }
 
 // 2. Check Toolchain Binaries
+const isWin = process.platform === 'win32';
+const whichCmd = isWin ? 'where' : 'which';
+
 const binaries = [
   'arm-none-eabi-gcc',
   'arm-none-eabi-g++',
@@ -40,18 +43,26 @@ for (const bin of binaries) {
   let foundPath = null;
   // Check in PATH
   try {
-    const out = execSync(`where ${bin}`, { stdio: 'pipe' }).toString().trim().split('\r\n')[0];
+    const out = execSync(`${whichCmd} ${bin}`, { stdio: 'pipe' }).toString().trim().split(/\r?\n/)[0];
     if (out && fs.existsSync(out)) foundPath = out;
   } catch (e) {}
 
-  // Check in standard devkitARM/devkitPro paths if env exists
-  if (!foundPath && process.env.DEVKITARM) {
-    const devkitArmBin = path.join(process.env.DEVKITARM, 'bin', `${bin}.exe`);
-    if (fs.existsSync(devkitArmBin)) foundPath = devkitArmBin;
+  // Check in standard devkitARM/devkitPro paths
+  const candidateDirs = [];
+  if (process.env.DEVKITARM) candidateDirs.push(path.join(process.env.DEVKITARM, 'bin'));
+  if (process.env.DEVKITPRO) {
+    candidateDirs.push(path.join(process.env.DEVKITPRO, 'tools', 'bin'));
+    candidateDirs.push(path.join(process.env.DEVKITPRO, 'devkitARM', 'bin'));
   }
-  if (!foundPath && process.env.DEVKITPRO) {
-    const devkitProBin = path.join(process.env.DEVKITPRO, 'tools', 'bin', `${bin}.exe`);
-    if (fs.existsSync(devkitProBin)) foundPath = devkitProBin;
+  candidateDirs.push('/opt/devkitpro/tools/bin', '/opt/devkitpro/devkitARM/bin', 'C:/devkitPro/tools/bin', 'C:/devkitPro/devkitARM/bin');
+
+  for (const cDir of candidateDirs) {
+    if (!foundPath) {
+      const p1 = path.join(cDir, isWin ? `${bin}.exe` : bin);
+      if (fs.existsSync(p1)) foundPath = p1;
+      const p2 = path.join(cDir, bin);
+      if (fs.existsSync(p2)) foundPath = p2;
+    }
   }
 
   if (foundPath) {
@@ -64,13 +75,40 @@ for (const bin of binaries) {
   }
 }
 
-// 3. Check Citro2D and Citro3D Headers / Libraries
-const dkp = process.env.DEVKITPRO || 'C:/devkitPro';
-const ctru = process.env.CTRULIB || path.join(dkp, 'libctru');
-const citro2dHeader = path.join(ctru, 'include', 'citro2d.h');
-const citro3dHeader = path.join(ctru, 'include', 'citro3d.h');
+// 3. Check Citro2D, Citro3D, and ctru Headers / Libraries
+const headerSearchDirs = [];
+if (process.env.CTRULIB) headerSearchDirs.push(path.join(process.env.CTRULIB, 'include'));
+if (process.env.DEVKITPRO) {
+  headerSearchDirs.push(path.join(process.env.DEVKITPRO, 'libctru', 'include'));
+  headerSearchDirs.push(path.join(process.env.DEVKITPRO, 'portlibs', '3ds', 'include'));
+}
+headerSearchDirs.push(
+  '/opt/devkitpro/libctru/include',
+  '/opt/devkitpro/portlibs/3ds/include',
+  'C:/devkitPro/libctru/include',
+  'C:/devkitPro/portlibs/3ds/include'
+);
 
-if (fs.existsSync(citro2dHeader)) {
+function findHeader(headerName) {
+  for (const dir of headerSearchDirs) {
+    const candidate = path.join(dir, headerName);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+const ctruHeader = findHeader('3ds.h');
+if (ctruHeader) {
+  results.libraries['ctru'] = ctruHeader;
+  console.log(`  ✓ ctru: ${ctruHeader}`);
+} else {
+  results.libraries['ctru'] = null;
+  results.missing.push('ctru header (3ds.h)');
+  console.log(`  ✗ ctru: NOT FOUND`);
+}
+
+const citro2dHeader = findHeader('citro2d.h');
+if (citro2dHeader) {
   results.libraries['citro2d'] = citro2dHeader;
   console.log(`  ✓ citro2d: ${citro2dHeader}`);
 } else {
@@ -79,7 +117,8 @@ if (fs.existsSync(citro2dHeader)) {
   console.log(`  ✗ citro2d: NOT FOUND`);
 }
 
-if (fs.existsSync(citro3dHeader)) {
+const citro3dHeader = findHeader('citro3d.h');
+if (citro3dHeader) {
   results.libraries['citro3d'] = citro3dHeader;
   console.log(`  ✓ citro3d: ${citro3dHeader}`);
 } else {

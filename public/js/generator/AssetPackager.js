@@ -29,14 +29,26 @@ export class AssetPackager {
    * @returns {string|null} Path to tex3ds or null if missing
    */
   static findTex3ds() {
+    const isWin = process.platform === 'win32';
+    const whichCmd = isWin ? 'where' : 'which';
     try {
-      const out = execFileSync('where', ['tex3ds'], { stdio: 'pipe' }).toString().trim().split('\r\n')[0];
+      const out = execFileSync(whichCmd, ['tex3ds'], { stdio: 'pipe' }).toString().trim().split(/\r?\n/)[0];
       if (out && fs.existsSync(out)) return out;
     } catch (e) {}
 
+    const searchDirs = [];
     if (process.env.DEVKITPRO) {
-      const dkpTex3ds = path.join(process.env.DEVKITPRO, 'tools', 'bin', 'tex3ds.exe');
-      if (fs.existsSync(dkpTex3ds)) return dkpTex3ds;
+      searchDirs.push(path.join(process.env.DEVKITPRO, 'tools', 'bin'));
+    }
+    searchDirs.push('/opt/devkitpro/tools/bin');
+    searchDirs.push('C:/devkitPro/tools/bin');
+
+    for (const sDir of searchDirs) {
+      const binName = isWin ? 'tex3ds.exe' : 'tex3ds';
+      const binPath = path.join(sDir, binName);
+      if (fs.existsSync(binPath)) return binPath;
+      const binNoExt = path.join(sDir, 'tex3ds');
+      if (fs.existsSync(binNoExt)) return binNoExt;
     }
     return null;
   }
@@ -129,21 +141,66 @@ export class AssetPackager {
       fs.mkdirSync(path.dirname(fullDestPath), { recursive: true });
 
       // Stage asset payload
-      // In production pipeline, converts with tex3ds if image and toolchain is installed
       const tex3dsBin = AssetPackager.findTex3ds();
       let finalBytes = null;
 
-      if (tex3dsBin && resolvedInfo.target3DS?.tex3dsFlags && resolvedInfo.sourcePath && fs.existsSync(resolvedInfo.sourcePath)) {
-        // Real tex3ds compilation
-        const tempT3x = fullDestPath;
-        const flags = (resolvedInfo.target3DS.tex3dsFlags || '').split(' ').filter(Boolean);
-        execFileSync(tex3dsBin, [...flags, '-o', tempT3x, resolvedInfo.sourcePath], { stdio: 'pipe' });
-        finalBytes = fs.readFileSync(tempT3x);
+      const isT3x = targetRomfsPath.toLowerCase().endsWith('.t3x') || 
+                    resolvedInfo.format === 'T3X' || 
+                    (resolvedInfo.target3DS && resolvedInfo.target3DS.t3xPath);
+
+      if (isT3x) {
+        if (!tex3dsBin) {
+          const err = new Error(`BLOCKED — missing toolchain/dependency: tex3ds (required by AssetPackager for asset "${assetId}" -> "${targetRomfsPath}")`);
+          err.isToolchainBlocked = true;
+          err.toolchainDetail = 'tex3ds';
+          throw err;
+        }
+
+        // Locate physical source image
+        let srcFile = resolvedInfo.sourcePath;
+        if (!srcFile || !fs.existsSync(srcFile)) {
+          const candidates = [
+            path.resolve(process.cwd(), srcFile || ''),
+            path.resolve(process.cwd(), 'test/fixtures/assets', path.basename(srcFile || '')),
+            path.resolve(process.cwd(), 'assets', srcFile || '')
+          ];
+          const found = candidates.find(p => fs.existsSync(p));
+          if (found) {
+            srcFile = found;
+          } else {
+            throw new Error(`AssetPackager: source asset file for "${assetId}" not found on disk at "${resolvedInfo.sourcePath}". Packaging aborted.`);
+          }
+        }
+
+        const flags = (resolvedInfo.target3DS?.tex3dsFlags || '-f rgba4444 -z auto').split(' ').filter(Boolean);
+        execFileSync(tex3dsBin, [...flags, '-o', fullDestPath, srcFile], { stdio: 'pipe' });
+        finalBytes = fs.readFileSync(fullDestPath);
+
+        if (!finalBytes || finalBytes.length === 0) {
+          throw new Error(`AssetPackager: tex3ds produced empty .t3x output for asset "${assetId}"`);
+        }
       } else {
-        // Stage deterministic resource payload with verified provenance header
-        const headerInfo = Buffer.from(`T3X_ROMFS_PAYLOAD:${assetId}:${resolvedInfo.format || 'RGBA4444'}:${hash}\n`, 'utf8');
-        fs.writeFileSync(fullDestPath, headerInfo);
-        finalBytes = headerInfo;
+        // Non-t3x resource (e.g. raw audio or metadata)
+        let srcFile = resolvedInfo.sourcePath;
+        if (!srcFile || !fs.existsSync(srcFile)) {
+          const candidates = [
+            path.resolve(process.cwd(), srcFile || ''),
+            path.resolve(process.cwd(), 'test/fixtures/assets', path.basename(srcFile || '')),
+            path.resolve(process.cwd(), 'assets', srcFile || '')
+          ];
+          const found = candidates.find(p => fs.existsSync(p));
+          if (found) {
+            srcFile = found;
+          }
+        }
+
+        if (srcFile && fs.existsSync(srcFile)) {
+          fs.copyFileSync(srcFile, fullDestPath);
+          finalBytes = fs.readFileSync(fullDestPath);
+        } else {
+          // If neither tool nor file exists for non-t3x, reject rather than inventing fake payload
+          throw new Error(`AssetPackager: source asset file for non-texture asset "${assetId}" not found at "${resolvedInfo.sourcePath}". Packaging aborted.`);
+        }
       }
 
       const fileSha256 = crypto.createHash('sha256').update(finalBytes).digest('hex');

@@ -1,0 +1,164 @@
+name: 3DS Build & Integration CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-3ds:
+    name: devkitARM / Citro2D Real Hardware Build (Level B)
+    runs-on: ubuntu-latest
+    container:
+      image: devkitpro/devkitarm:latest
+
+    env:
+      DEVKITPRO: /opt/devkitpro
+      DEVKITARM: /opt/devkitpro/devkitARM
+      CTRULIB: /opt/devkitpro/libctru
+      PATH: /opt/devkitpro/tools/bin:/opt/devkitpro/devkitARM/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+    steps:
+      - name: Configure container permissions & git safe directory
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE" || true
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install 3DS SDK components & Node runtime in devkitPro container
+        run: |
+          echo "Updating pacman repositories..."
+          dkp-pacman -Syu --noconfirm 3ds-dev 3ds-citro2d 3ds-citro3d 3ds-tex3ds
+          pacman -Sy --noconfirm nodejs npm file
+
+      - name: Install project npm dependencies
+        run: |
+          npm ci
+
+      - name: Preflight Toolchain Verification
+        id: preflight
+        run: |
+          echo "===================================================="
+          echo "  PREFLIGHT: REAL 3DS TOOLCHAIN VERIFICATION        "
+          echo "===================================================="
+          echo "DEVKITPRO: $DEVKITPRO"
+          echo "DEVKITARM: $DEVKITARM"
+          echo "CTRULIB:   $CTRULIB"
+          
+          which arm-none-eabi-gcc
+          which arm-none-eabi-g++
+          which 3dsxtool
+          which tex3ds
+
+          test -f "$DEVKITPRO/libctru/include/3ds.h"
+          test -f "$DEVKITPRO/libctru/include/citro2d.h" || test -f "$DEVKITPRO/portlibs/3ds/include/citro2d.h"
+          test -f "$DEVKITPRO/libctru/include/citro3d.h" || test -f "$DEVKITPRO/portlibs/3ds/include/citro3d.h"
+
+          echo "----------------------------------------------------"
+          arm-none-eabi-gcc --version | head -n 1
+          arm-none-eabi-g++ --version | head -n 1
+          tex3ds --help 2>&1 | head -n 2 || true
+          3dsxtool --help 2>&1 | head -n 2 || true
+          
+          echo "Running check_3ds_toolchain.mjs..."
+          node test/native/check_3ds_toolchain.mjs
+          echo "3DS TOOLCHAIN: PASS"
+
+      - name: Real tex3ds Graphics Conversion & Unit Tests
+        run: |
+          echo "===================================================="
+          echo "  RUNNING FULL TEST SUITE WITH REAL 3DS TOOLCHAIN   "
+          echo "===================================================="
+          npm test
+          echo "TEX3DS: PASS"
+
+      - name: Clean previous build artifacts
+        run: |
+          make clean || true
+          rm -rf build artifacts build-log.txt
+
+      - name: Real 3DS Build Pipeline (Scene -> tex3ds -> RomFS -> devkitARM -> ELF -> 3DSX)
+        run: |
+          echo "===================================================="
+          echo "  EXECUTING REAL 3DS COMPILATION PIPELINE           "
+          echo "===================================================="
+          node test/native/run_3ds_build.mjs 2>&1 | tee build-log.txt
+          echo "C++ LINK: PASS"
+
+      - name: Validate ELF Binary
+        run: |
+          echo "===================================================="
+          echo "  VALIDATING ARM/ELF BINARY                         "
+          echo "===================================================="
+          test -f build/GUI_3DS.elf
+          test -s build/GUI_3DS.elf
+          
+          ELF_TYPE=$(file build/GUI_3DS.elf)
+          echo "ELF info: $ELF_TYPE"
+          echo "$ELF_TYPE" | grep -i "ARM"
+          
+          echo "Inspecting symbols with arm-none-eabi-nm..."
+          arm-none-eabi-nm build/GUI_3DS.elf | grep -i "Renderer2D" | head -n 10
+          echo "ELF: PASS"
+
+      - name: Validate 3DSX Binary with RomFS
+        run: |
+          echo "===================================================="
+          echo "  VALIDATING 3DSX BINARY & ROMFS                   "
+          echo "===================================================="
+          test -f build/GUI_3DS.3dsx
+          test -s build/GUI_3DS.3dsx
+          test -f build/romfs/romfs_manifest.json
+          
+          SIZE_3DSX=$(stat -c%s build/GUI_3DS.3dsx)
+          echo "3DSX executable size: $SIZE_3DSX bytes"
+          test "$SIZE_3DSX" -gt 0
+          
+          echo "ROMFS: PASS"
+          echo "3DSX: PASS"
+
+      - name: Deterministic Build Verification
+        run: |
+          echo "===================================================="
+          echo "  DETERMINISTIC EXPORT & MANIFEST REPRODUCIBILITY   "
+          echo "===================================================="
+          test -f project/generated/SceneManifest.json
+          test -f build/romfs/romfs_manifest.json
+          
+          # Verify that repeated scene export on identical source produces byte-for-byte identical output
+          node --input-type=module -e "
+            import fs from 'fs';
+            import { SceneCppExporter } from './public/js/generator/SceneCppExporter.js';
+            const sceneData = JSON.parse(fs.readFileSync('project/screens/PikachuEntrance.json', 'utf8'));
+            const expA = SceneCppExporter.export(sceneData);
+            const expB = SceneCppExporter.export(sceneData);
+            if (JSON.stringify(expA) !== JSON.stringify(expB)) {
+              console.error('Export determinism failed: non-identical output across repeated exports');
+              process.exit(1);
+            }
+            console.log('Deterministic export: PASS (byte-for-byte identical)');
+          "
+
+      - name: Stage Artifacts
+        run: |
+          mkdir -p artifacts
+          cp build/GUI_3DS.3dsx artifacts/
+          cp build/GUI_3DS.elf artifacts/
+          cp project/generated/SceneManifest.json artifacts/
+          cp build/romfs/romfs_manifest.json artifacts/
+          cp -r project/generated artifacts/generated
+          cp -r build/romfs artifacts/romfs
+          cp build-log.txt artifacts/build-log.txt
+
+          echo "Staged artifacts:"
+          ls -la artifacts/
+
+      - name: Upload 3DS Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: GUI_3DS-build-artifacts
+          path: artifacts/
+          if-no-files-found: error

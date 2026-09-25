@@ -313,3 +313,66 @@ El evaluador C++ (`SceneTimeline`) implementa exactamente las mismas curvas mate
 
 La paridad matemática entre Preview JS y Runtime C++ está validada por tests automatizados con error máximo $\Delta < 10^{-6}$.
 
+---
+
+## Development Environments
+
+GUI_3DS implementa una arquitectura desacoplada en tres niveles claramente diferenciados para permitir el desarrollo sin requerir permisos de administrador en estaciones de trabajo corporativas, mientras delega y verifica las compilaciones nativas de hardware en integración continua (CI) oficial.
+
+### 1. Nivel A — Laptop corporativa / Entorno local portátil
+
+Diseñado para ejecutarse en entornos donde el usuario **no posee permisos de administrador** ni tiene instalado el SDK de Nintendo 3DS:
+
+- **Desarrollo:** El Studio visual (`npm start`), la previsualización interactiva dual-screen y la edición de escenas funcionan 100% de manera local.
+- **Validación automatizada:**
+  ```bash
+  npm test
+  npm run native-parity
+  ```
+- **Alcance verificado localmente:**
+  - `SceneModel`, `Timeline`, `Keyframes`, `Interpolation`
+  - `SceneValidator`, `SceneCppExporter`, serialización y determinismo
+  - Paridad matemática C++ ↔ JS (`test/native/run_native_parity.mjs`)
+  - Rechazo de assets corruptos o no registrados
+- **Ausencia de devkitPro:** La falta de devkitARM/devkitPro en la máquina local **no representa un bug**. Las pruebas dependientes del toolchain de hardware reportan limpiamente `BLOCKED` sin fingir la compilación ni usar placeholders.
+
+### 2. Nivel B — GitHub Actions / Official 3DS CI
+
+El gate oficial y reproducible de integración para Nintendo 3DS se ejecuta en GitHub Actions utilizando el contenedor oficial de devkitPro (`devkitpro/devkitarm`):
+
+- **Workflows:**
+  - `.github/workflows/tests.yml`: Validación rápida de tests JS y paridad matemática (Level A).
+  - `.github/workflows/build-3ds.yml`: Build nativo de hardware real 3DS (Level B).
+- **Toolchain real verificado:**
+  - `devkitARM` (`arm-none-eabi-gcc`, `arm-none-eabi-g++`)
+  - `libctru` (`3ds.h`)
+  - `Citro2D` (`citro2d.h`, `libcitro2d.a`)
+  - `Citro3D` (`citro3d.h`, `libcitro3d.a`)
+  - `tex3ds` (conversión real de gráficos a `.t3x`)
+  - `3dsxtool` (empaquetado real de ejecutable `.3dsx`)
+  - RomFS (sistema de archivos determinista)
+- **Artefactos generados:**
+  - `build/GUI_3DS.elf` (binario ARM/ELF verificado)
+  - `build/GUI_3DS.3dsx` (ejecutable con RomFS incrustado)
+  - `project/generated/SceneManifest.json`
+  - `build/romfs/romfs_manifest.json`
+  - `build-log.txt`
+
+### 3. Nivel C — PC personal / Hardware Nintendo 3DS
+
+Entorno opcional para desarrollo offline, depuración interactiva y pruebas en hardware real de Nintendo 3DS:
+
+- Requiere instalar devkitPro con el payload de 3DS (`dkp-pacman -S 3ds-dev 3ds-citro2d 3ds-citro3d 3ds-tex3ds`).
+- Comandos:
+  ```bash
+  # Verificar el toolchain local
+  npm run 3ds-test
+  
+  # Compilar binarios reales (.elf y .3dsx con RomFS)
+  npm run 3ds-build
+  # o bien:
+  make 3ds
+  ```
+- El archivo `build/GUI_3DS.3dsx` resultante puede ejecutarse directamente en emulador Citra o transferirse vía Homebrew Launcher a una consola Nintendo 3DS física.
+
+

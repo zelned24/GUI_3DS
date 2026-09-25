@@ -53,7 +53,12 @@ void C2D_DrawRectSolid(float x, float y, float z, float w, float h, u32 clr);
 void C2D_DrawImageAt(C2D_Image img, float x, float y, float z, const C2D_ImageTint* tint, float scaleX, float scaleY);
 void C2D_DrawImageAtRotatedScaled(C2D_Image img, float x, float y, float z, float rotation, const C2D_ImageTint* tint, float scaleX, float scaleY);
 void C2D_PlainImageTint(C2D_ImageTint* tint, u32 color, float blend);
-void C2D_DrawText(const C2D_Text* text, u32 flags, float x, float y, float z, float scaleX, float scaleY);
+#define C2D_WithColor (1 << 0)
+C2D_TextBuf C2D_TextBufNew(size_t maxGlyphs);
+void C2D_TextBufDelete(C2D_TextBuf buf);
+void C2D_TextParse(C2D_Text* text, C2D_TextBuf buf, const char* str);
+void C2D_TextOptimize(const C2D_Text* text);
+void C2D_DrawText(const C2D_Text* text, u32 flags, float x, float y, float z, float scaleX, float scaleY, ...);
 
 C2D_SpriteSheet C2D_SpriteSheetLoad(const char* filename);
 C2D_Image C2D_SpriteSheetGetImage(C2D_SpriteSheet sheet, size_t index);

@@ -2829,13 +2829,38 @@ test('BETA-UI-3.24: Export failure is strictly deterministic', () => {
 
 function checkToolchain(toolName) {
   let found = false;
+  const isWin = process.platform === 'win32';
+  const whichCmd = isWin ? 'where' : 'which';
+
   if (toolName === 'DEVKITARM' || toolName === 'DEVKITPRO') {
     found = Boolean(process.env[toolName] && fs.existsSync(process.env[toolName]));
+    if (!found) {
+      const defaultPaths = toolName === 'DEVKITARM' 
+        ? ['/opt/devkitpro/devkitARM', 'C:/devkitPro/devkitARM'] 
+        : ['/opt/devkitpro', 'C:/devkitPro'];
+      found = defaultPaths.some(p => fs.existsSync(p));
+    }
   } else {
     try {
-      const out = execFileSync('where', [toolName], { stdio: 'pipe' }).toString().trim();
+      const out = execFileSync(whichCmd, [toolName], { stdio: 'pipe' }).toString().trim();
       if (out) found = true;
-    } catch (e) {}
+    } catch (e) {
+      const candidateDirs = [];
+      if (process.env.DEVKITARM) candidateDirs.push(path.join(process.env.DEVKITARM, 'bin'));
+      if (process.env.DEVKITPRO) {
+        candidateDirs.push(path.join(process.env.DEVKITPRO, 'tools', 'bin'));
+        candidateDirs.push(path.join(process.env.DEVKITPRO, 'devkitARM', 'bin'));
+      }
+      candidateDirs.push('/opt/devkitpro/tools/bin', '/opt/devkitpro/devkitARM/bin', 'C:/devkitPro/tools/bin', 'C:/devkitPro/devkitARM/bin');
+      for (const d of candidateDirs) {
+        const binWithExt = path.join(d, isWin ? `${toolName}.exe` : toolName);
+        const binNoExt = path.join(d, toolName);
+        if (fs.existsSync(binWithExt) || fs.existsSync(binNoExt)) {
+          found = true;
+          break;
+        }
+      }
+    }
   }
   if (!found) {
     const err = new Error(`BLOCKED — missing toolchain/dependency: ${toolName}`);
@@ -2926,6 +2951,40 @@ test('BETA-UI-3.32: Renderer integration smoke test', () => {
   assert.ok(r2dHpp.includes('C3D_RenderTarget* getBottomTarget()'), 'getBottomTarget must be exposed');
 });
 
+test('BETA-UI-3.33: Real devkitARM compilation of Renderer2D', () => {
+  checkToolchain('arm-none-eabi-g++');
+  checkToolchain('DEVKITARM');
+
+  const r2dCpp = path.join(__dirname, '../project/src/gfx/renderer2d.cpp');
+  const outObj = path.join(__dirname, 'renderer2d_test.o');
+  const dkp = process.env.DEVKITPRO || '/opt/devkitpro';
+  const ctru = process.env.CTRULIB || path.join(dkp, 'libctru');
+  const devkitArmDir = process.env.DEVKITARM || '/opt/devkitpro/devkitARM';
+  const isWin = process.platform === 'win32';
+  const gxx = path.join(devkitArmDir, 'bin', isWin ? 'arm-none-eabi-g++.exe' : 'arm-none-eabi-g++');
+
+  const args = [
+    '-march=armv6k', '-mtune=mpcore', '-mfloat-abi=hard', '-mtp=cp15',
+    '-O2', '-std=gnu++17', '-fno-rtti', '-fno-exceptions',
+    `-I${path.join(__dirname, '../project/include')}`,
+    `-I${path.join(__dirname, '../project/generated/include')}`,
+    `-I${path.join(ctru, 'include')}`,
+    `-I${path.join(dkp, 'portlibs/3ds/include')}`,
+    '-c', r2dCpp,
+    '-o', outObj
+  ];
+
+  try {
+    execFileSync(gxx, args, { stdio: 'pipe' });
+    assert.ok(fs.existsSync(outObj), 'Renderer2D must compile to real ARM object file');
+    assert.ok(fs.statSync(outObj).size > 0, 'Object file must not be empty');
+  } finally {
+    if (fs.existsSync(outObj)) {
+      fs.rmSync(outObj, { force: true });
+    }
+  }
+});
+
 // ====================================================
 // BETA-UI-4 — Asset Packaging, RomFS & Pipeline
 // ====================================================
@@ -2998,6 +3057,27 @@ test('BETA-UI-4.4: Deterministic RomFS manifest', async () => {
 
 test('BETA-UI-4.5: Real tex3ds conversion', () => {
   checkToolchain('tex3ds');
+  const tex3dsBin = AssetPackager.findTex3ds();
+  assert.ok(tex3dsBin, 'tex3ds binary must be located');
+
+  const fixturePng = path.join(__dirname, 'fixtures/assets/test_sprite.png');
+  assert.ok(fs.existsSync(fixturePng), 'test_sprite.png fixture must exist');
+
+  const tempT3x = path.join(__dirname, 'test_sprite_output.t3x');
+  try {
+    execFileSync(tex3dsBin, ['-f', 'rgba4444', '-z', 'auto', '-o', tempT3x, fixturePng], { stdio: 'pipe' });
+    assert.ok(fs.existsSync(tempT3x), 'Output .t3x must exist');
+    const stat = fs.statSync(tempT3x);
+    assert.ok(stat.size > 0, 'Output .t3x must have size > 0');
+
+    // Inspect binary structure
+    const t3xBytes = fs.readFileSync(tempT3x);
+    assert.ok(t3xBytes.length >= 16, 'Real .t3x must contain header bytes');
+  } finally {
+    if (fs.existsSync(tempT3x)) {
+      fs.rmSync(tempT3x, { force: true });
+    }
+  }
 });
 
 test('BETA-UI-4.6: Scene asset references resolve into RomFS', () => {
@@ -3013,6 +3093,14 @@ test('BETA-UI-4.6: Scene asset references resolve into RomFS', () => {
 
 test('BETA-UI-4.7: Real 3DSX generated with RomFS', () => {
   checkToolchain('3dsxtool');
+  checkToolchain('DEVKITARM');
+
+  const elfPath = path.join(__dirname, '../build/GUI_3DS.elf');
+  const d3sxPath = path.join(__dirname, '../build/GUI_3DS.3dsx');
+  assert.ok(fs.existsSync(elfPath), 'build/GUI_3DS.elf must exist');
+  assert.ok(fs.statSync(elfPath).size > 0, 'build/GUI_3DS.elf must not be empty');
+  assert.ok(fs.existsSync(d3sxPath), 'build/GUI_3DS.3dsx must exist');
+  assert.ok(fs.statSync(d3sxPath).size > 0, 'build/GUI_3DS.3dsx must not be empty');
 });
 
 test('BETA-UI-4.8: Repeated package builds are deterministic', async () => {
