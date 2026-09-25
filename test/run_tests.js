@@ -3164,6 +3164,11 @@ test('BETA-UI-4.7: Real 3DSX generated with RomFS', () => {
 
   const elfPath = path.join(__dirname, '../build/GUI_3DS.elf');
   const d3sxPath = path.join(__dirname, '../build/GUI_3DS.3dsx');
+
+  if (!fs.existsSync(elfPath) || !fs.existsSync(d3sxPath)) {
+    execFileSync('make', ['-f', 'Makefile.3ds', '3ds'], { cwd: path.join(__dirname, '..'), stdio: 'pipe' });
+  }
+
   assert.ok(fs.existsSync(elfPath), 'build/GUI_3DS.elf must exist');
   assert.ok(fs.statSync(elfPath).size > 0, 'build/GUI_3DS.elf must not be empty');
   assert.ok(fs.existsSync(d3sxPath), 'build/GUI_3DS.3dsx must exist');

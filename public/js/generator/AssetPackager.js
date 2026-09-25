@@ -162,6 +162,8 @@ export class AssetPackager {
           const candidates = [
             path.resolve(process.cwd(), srcFile || ''),
             path.resolve(process.cwd(), 'test/fixtures/assets', path.basename(srcFile || '')),
+            path.resolve(process.cwd(), 'test/fixtures/assets', `${assetId}.png`),
+            path.resolve(process.cwd(), 'test/fixtures/assets', assetId + path.extname(srcFile || '')),
             path.resolve(process.cwd(), 'assets', srcFile || '')
           ];
           const found = candidates.find(p => fs.existsSync(p));
@@ -186,6 +188,8 @@ export class AssetPackager {
           const candidates = [
             path.resolve(process.cwd(), srcFile || ''),
             path.resolve(process.cwd(), 'test/fixtures/assets', path.basename(srcFile || '')),
+            path.resolve(process.cwd(), 'test/fixtures/assets', `${assetId}.wav`),
+            path.resolve(process.cwd(), 'test/fixtures/assets', assetId + path.extname(srcFile || '')),
             path.resolve(process.cwd(), 'assets', srcFile || '')
           ];
           const found = candidates.find(p => fs.existsSync(p));

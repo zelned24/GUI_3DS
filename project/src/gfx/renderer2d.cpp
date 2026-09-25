@@ -2,6 +2,20 @@
 #include "screens/SceneAssets.hpp"
 #include <cmath>
 
+#ifdef __3DS__
+// Citro2D C2D_DrawImageAtRotatedScaled bridge to real C2D_DrawImageAtRotated
+static inline void C2D_DrawImageAtRotatedScaled(
+    C2D_Image img,
+    float x, float y,
+    float depth,
+    float angle,
+    const C2D_ImageTint* tint,
+    float scaleX, float scaleY
+) {
+    C2D_DrawImageAtRotated(img, x, y, depth, angle, tint, scaleX, scaleY);
+}
+#endif
+
 Renderer2D::Renderer2D()
     : m_topTarget(nullptr)
     , m_bottomTarget(nullptr)
