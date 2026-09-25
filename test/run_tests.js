@@ -42,6 +42,11 @@ import {
   UPSTREAM_LOCALES_FIXTURE
 } from './fixtures/upstream_enums_fixture.js';
 
+import { Keyframe } from '../public/js/animation/Keyframe.js';
+import { Interpolation } from '../public/js/animation/Interpolation.js';
+import { AnimationTrack } from '../public/js/animation/AnimationTrack.js';
+import { TimelineEvaluator } from '../public/js/animation/TimelineEvaluator.js';
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1405,6 +1410,433 @@ test('BETA-UI-1.6: CodeGenerator exports Image and PokemonSprite to valid C++ wi
   assert.ok(generated.cpp.includes('m_bg_plains = std::make_unique<Image>(0.0f, 0.0f, 400.0f, 240.0f, "bg_arena_plains");'));
   assert.ok(generated.cpp.includes('m_bg_plains->setFlip(true, false);'));
   assert.ok(generated.cpp.includes('m_pikachu_player = std::make_unique<PokemonSprite>(60.0f, 120.0f, 25, "back", false);'));
+});
+
+// -------------------------------------------------------------
+// 21. BETA-UI-2: ANIMATION MODEL, TIMELINE, EVALUATION & DETERMINISM
+// -------------------------------------------------------------
+test('BETA-UI-2.1: Keyframe model enforces integer frame snapping, value types, and cloning', () => {
+  assert.strictEqual(Keyframe.snapFrame(12.37), 12);
+  assert.strictEqual(Keyframe.snapFrame(14.8), 15);
+  assert.strictEqual(Keyframe.snapFrame(-5), 0);
+
+  const kf = new Keyframe({
+    frame: 15.6,
+    value: 240,
+    interpolation: 'easeInOut'
+  });
+
+  assert.strictEqual(kf.frame, 16);
+  assert.strictEqual(kf.value, 240);
+  assert.strictEqual(kf.interpolation, 'easeInOut');
+
+  const cloned = kf.clone({ frame: 30, value: 180 });
+  assert.strictEqual(cloned.frame, 30);
+  assert.strictEqual(cloned.value, 180);
+  assert.strictEqual(cloned.interpolation, 'easeInOut');
+  assert.strictEqual(kf.frame, 16); // immutable clone
+
+  const json = kf.toJSON();
+  const restored = Keyframe.fromJSON(json);
+  assert.strictEqual(restored.frame, 16);
+  assert.strictEqual(restored.value, 240);
+  assert.strictEqual(restored.interpolation, 'easeInOut');
+});
+
+test('BETA-UI-2.2: Pure interpolation algorithms (Step, Linear, EaseIn, EaseOut, EaseInOut, Color)', () => {
+  // Step
+  assert.strictEqual(Interpolation.interpolate(0, 100, 0, 'step'), 0);
+  assert.strictEqual(Interpolation.interpolate(0, 100, 0.99, 'step'), 0);
+  assert.strictEqual(Interpolation.interpolate(0, 100, 1.0, 'step'), 100);
+
+  // Linear
+  assert.strictEqual(Interpolation.interpolate(100, 200, 0.5, 'linear'), 150);
+  assert.strictEqual(Interpolation.interpolate(0, 10, 0.25, 'linear'), 2.5);
+
+  // Ease In (quadratic t^2)
+  const easeInVal = Interpolation.interpolate(0, 100, 0.5, 'easeIn');
+  assert.strictEqual(easeInVal, 25); // 0.5^2 * 100 = 25
+
+  // Ease Out (decelerates)
+  const easeOutVal = Interpolation.interpolate(0, 100, 0.5, 'easeOut');
+  assert.strictEqual(easeOutVal, 75); // (1 - (1-0.5)^2) * 100 = 75
+
+  // Ease In Out (symmetric midpoint 50)
+  const easeInOutMid = Interpolation.interpolate(0, 100, 0.5, 'easeInOut');
+  assert.strictEqual(easeInOutMid, 50);
+
+  // Hex Color interpolation
+  const midGray = Interpolation.interpolate('#000000', '#ffffff', 0.5, 'linear');
+  assert.strictEqual(midGray.toLowerCase(), '#808080');
+});
+
+test('BETA-UI-2.3: AnimationTrack manages keyframes (add, remove, move, duplicate, sort)', () => {
+  const track = new AnimationTrack({
+    targetNodeId: 'node_pika',
+    propertyPath: 'transform.x',
+    displayName: 'Pikachu X'
+  });
+
+  // Adding out of order maintains sorted frames
+  track.addKeyframe(30, 240, 'linear');
+  track.addKeyframe(0, 320, 'linear');
+  track.addKeyframe(60, 220, 'easeInOut');
+  track.addKeyframe(15, 280, 'linear');
+
+  assert.strictEqual(track.keyframes.length, 4);
+  assert.deepStrictEqual(track.keyframes.map(k => k.frame), [0, 15, 30, 60]);
+
+  // Updating existing frame replaces value instead of adding duplicate
+  track.addKeyframe(15, 285, 'linear');
+  assert.strictEqual(track.keyframes.length, 4);
+  assert.strictEqual(track.keyframes[1].value, 285);
+
+  // Move keyframe
+  const moved = track.moveKeyframe(15, 20);
+  assert.strictEqual(moved, true);
+  assert.deepStrictEqual(track.keyframes.map(k => k.frame), [0, 20, 30, 60]);
+
+  // Remove keyframe
+  const removed = track.removeKeyframe(20);
+  assert.ok(removed);
+  assert.deepStrictEqual(track.keyframes.map(k => k.frame), [0, 30, 60]);
+});
+
+test('BETA-UI-2.4: TimelineEvaluator evaluates before first, exact, between, and after last keyframe', () => {
+  const track = new AnimationTrack({
+    targetNodeId: 'hero',
+    propertyPath: 'transform.x'
+  });
+
+  track.addKeyframe(10, 100, 'linear');
+  track.addKeyframe(30, 300, 'linear');
+
+  // Before first keyframe: clamped to first value
+  assert.strictEqual(track.evaluate(0), 100);
+  assert.strictEqual(track.evaluate(5), 100);
+
+  // Exact keyframe: exact value without float drift
+  assert.strictEqual(track.evaluate(10), 100);
+  assert.strictEqual(track.evaluate(30), 300);
+
+  // Between keyframes: linearly interpolated (frame 20 is exactly halfway)
+  assert.strictEqual(track.evaluate(20), 200);
+
+  // After last keyframe: clamped to last value
+  assert.strictEqual(track.evaluate(45), 300);
+  assert.strictEqual(track.evaluate(120), 300);
+});
+
+test('BETA-UI-2.5: SceneModel temporal source of truth (integer frame, duration, fps=60, frameToSeconds, seek)', () => {
+  const scene = new SceneModel({
+    id: 'TimeTestScene',
+    fps: 60,
+    durationFrames: 120
+  });
+
+  assert.strictEqual(scene.fps, 60);
+  assert.strictEqual(scene.durationFrames, 120);
+  assert.strictEqual(scene.currentFrame, 0);
+
+  // Conversions
+  assert.strictEqual(scene.frameToSeconds(60), 1.0);
+  assert.strictEqual(scene.frameToSeconds(30), 0.5);
+  assert.strictEqual(scene.secondsToFrame(1.5), 90);
+  assert.strictEqual(scene.secondsToFrame(0.5), 30);
+
+  // Formatted Timecode (MM:SS.mmm)
+  assert.strictEqual(scene.getFormattedTime(0), '00:00.000');
+  assert.strictEqual(scene.getFormattedTime(60), '00:01.000');
+  assert.strictEqual(scene.getFormattedTime(90), '00:01.500');
+
+  // Seek integer clamping
+  scene.seek(45.8);
+  assert.strictEqual(scene.currentFrame, 46);
+
+  scene.seek(200); // clamps to durationFrames
+  assert.strictEqual(scene.currentFrame, 120);
+
+  scene.seek(-10); // clamps to 0
+  assert.strictEqual(scene.currentFrame, 0);
+});
+
+test('BETA-UI-2.6: Preview State vs Document State separation (evaluation does NOT overwrite base document values)', () => {
+  const scene = new SceneModel({ id: 'StateSeparationTest' });
+  const node = ComponentRegistry.create('RogueBox', {
+    id: 'box_01',
+    screen: 'top',
+    x: 300,
+    y: 100,
+    width: 60,
+    height: 40
+  });
+  scene.addNode(node);
+
+  const track = new AnimationTrack({
+    targetNodeId: 'box_01',
+    propertyPath: 'transform.x'
+  });
+  track.addKeyframe(0, 300, 'linear');
+  track.addKeyframe(60, 100, 'linear');
+  scene.tracks.push(track);
+
+  // Evaluate at frame 30
+  const evaluatedMap = scene.evaluate(30);
+  assert.ok(evaluatedMap.has('box_01'));
+  const evalData = evaluatedMap.get('box_01');
+  assert.strictEqual(evalData.transform.x, 200);
+
+  // CRITICAL REQUIREMENT: Persistent document node base value MUST NOT be mutated!
+  assert.strictEqual(node.x, 300);
+  assert.strictEqual(node.transform.x, 300);
+});
+
+test('BETA-UI-2.7: Track Mute and Solo filtering during evaluation', () => {
+  const scene = new SceneModel({ id: 'MuteSoloTest' });
+  const node = ComponentRegistry.create('PixelText', {
+    id: 'txt_01',
+    screen: 'top',
+    x: 50,
+    y: 50,
+    properties: { text: 'Test' }
+  });
+  scene.addNode(node);
+
+  const trackX = new AnimationTrack({
+    id: 't_x',
+    targetNodeId: 'txt_01',
+    propertyPath: 'transform.x'
+  });
+  trackX.addKeyframe(0, 50, 'linear');
+  trackX.addKeyframe(60, 150, 'linear');
+
+  const trackOpacity = new AnimationTrack({
+    id: 't_op',
+    targetNodeId: 'txt_01',
+    propertyPath: 'opacity'
+  });
+  trackOpacity.addKeyframe(0, 0, 'linear');
+  trackOpacity.addKeyframe(60, 1, 'linear');
+
+  scene.tracks = [trackX, trackOpacity];
+
+  // Both evaluated
+  let ev = scene.evaluate(30);
+  assert.strictEqual(ev.get('txt_01').transform.x, 100);
+  assert.strictEqual(ev.get('txt_01').opacity, 0.5);
+
+  // Mute track X: only opacity evaluates
+  trackX.muted = true;
+  ev = scene.evaluate(30);
+  assert.strictEqual(ev.get('txt_01').transform.x, undefined);
+  assert.strictEqual(ev.get('txt_01').opacity, 0.5);
+  trackX.muted = false;
+
+  // Solo track X: opacity is ignored
+  trackX.solo = true;
+  ev = scene.evaluate(30);
+  assert.strictEqual(ev.get('txt_01').transform.x, 100);
+  assert.strictEqual(ev.get('txt_01').opacity, undefined);
+});
+
+test('BETA-UI-2.8: Persistence & Determinism (Scene serialization roundtrip preserves tracks, keyframes, identical evaluation)', () => {
+  const originalScene = new SceneModel({
+    id: 'DeterministicAnimScene',
+    name: 'Deterministic Animation Scene',
+    fps: 60,
+    durationFrames: 90
+  });
+
+  const pika = ComponentRegistry.create('PokemonSprite', {
+    id: 'pika_node',
+    screen: 'top',
+    x: 320,
+    y: 60,
+    width: 96,
+    height: 96,
+    properties: { species: 'Pikachu', nationalDexId: 25 }
+  });
+  originalScene.addNode(pika);
+
+  const track = new AnimationTrack({
+    targetNodeId: 'pika_node',
+    propertyPath: 'transform.x',
+    displayName: 'Pikachu X'
+  });
+  track.addKeyframe(0, 320, 'linear');
+  track.addKeyframe(15, 280, 'linear');
+  track.addKeyframe(30, 240, 'linear');
+  track.addKeyframe(60, 220, 'easeInOut');
+  originalScene.tracks.push(track);
+
+  // Evaluate at multiple frames
+  const eval0 = originalScene.evaluate(0).get('pika_node').transform.x;
+  const eval15 = originalScene.evaluate(15).get('pika_node').transform.x;
+  const eval30 = originalScene.evaluate(30).get('pika_node').transform.x;
+  const eval45 = originalScene.evaluate(45).get('pika_node').transform.x;
+  const eval60 = originalScene.evaluate(60).get('pika_node').transform.x;
+
+  // Serialize to JSON
+  const jsonStr = JSON.stringify(originalScene.toJSON(), null, 2);
+  const parsedData = JSON.parse(jsonStr);
+
+  // Restore into a completely new SceneModel
+  const restoredScene = new SceneModel(parsedData);
+  assert.strictEqual(restoredScene.fps, 60);
+  assert.strictEqual(restoredScene.durationFrames, 90);
+  assert.strictEqual(restoredScene.tracks.length, 1);
+  assert.strictEqual(restoredScene.tracks[0].keyframes.length, 4);
+
+  // Verify byte-for-byte deterministic evaluation equivalence
+  assert.strictEqual(restoredScene.evaluate(0).get('pika_node').transform.x, eval0);
+  assert.strictEqual(restoredScene.evaluate(15).get('pika_node').transform.x, eval15);
+  assert.strictEqual(restoredScene.evaluate(30).get('pika_node').transform.x, eval30);
+  assert.strictEqual(restoredScene.evaluate(45).get('pika_node').transform.x, eval45);
+  assert.strictEqual(restoredScene.evaluate(60).get('pika_node').transform.x, eval60);
+});
+
+test('BETA-UI-2.9: Undo/Redo integration for keyframe and track operations via HistoryManager', () => {
+  const model = new ProjectModel();
+  const scene = model.createScene('HistoryTestScene');
+  const node = model.addComponent({ type: 'RogueBox', x: 10, y: 10, width: 50, height: 50 });
+
+  const track = new AnimationTrack({ targetNodeId: node.id, propertyPath: 'transform.x' });
+  scene.tracks.push(track);
+
+  // Action 1: Add keyframe
+  track.addKeyframe(0, 100);
+  model.history.push({
+    description: 'Add Keyframe at 0',
+    undo: () => track.removeKeyframe(0),
+    execute: () => track.addKeyframe(0, 100)
+  });
+  assert.strictEqual(track.keyframes.length, 1);
+
+  // Action 2: Add keyframe at 30
+  track.addKeyframe(30, 200);
+  model.history.push({
+    description: 'Add Keyframe at 30',
+    undo: () => track.removeKeyframe(30),
+    execute: () => track.addKeyframe(30, 200)
+  });
+  assert.strictEqual(track.keyframes.length, 2);
+
+  // Undo Action 2
+  model.history.undo();
+  assert.strictEqual(track.keyframes.length, 1);
+  assert.strictEqual(track.keyframes[0].frame, 0);
+
+  // Undo Action 1
+  model.history.undo();
+  assert.strictEqual(track.keyframes.length, 0);
+
+  // Redo Action 1
+  model.history.redo();
+  assert.strictEqual(track.keyframes.length, 1);
+  assert.strictEqual(track.keyframes[0].frame, 0);
+
+  // Redo Action 2
+  model.history.redo();
+  assert.strictEqual(track.keyframes.length, 2);
+  assert.strictEqual(track.keyframes[1].frame, 30);
+});
+
+test('BETA-UI-2.10: Integration: SceneModel -> TimelineEvaluator -> Canvas/Preview (Hierarchical group evaluation)', () => {
+  const scene = new SceneModel({ id: 'HierarchyAnimScene' });
+
+  const group = ComponentRegistry.create('Group', {
+    id: 'player_group',
+    screen: 'top',
+    x: 100,
+    y: 80
+  });
+
+  const sprite = ComponentRegistry.create('Image', {
+    id: 'player_sprite',
+    screen: 'top',
+    x: 20,
+    y: 10,
+    width: 32,
+    height: 32,
+    parent: 'player_group',
+    properties: { asset: 'bg_arena_plains' }
+  });
+
+  group.addChild(sprite.id);
+  scene.addNode(group);
+  scene.addNode(sprite);
+
+  // Animate the parent group's X: from 100 to 200 over 40 frames
+  const track = new AnimationTrack({
+    targetNodeId: 'player_group',
+    propertyPath: 'transform.x'
+  });
+  track.addKeyframe(0, 100, 'linear');
+  track.addKeyframe(40, 200, 'linear');
+  scene.tracks.push(track);
+
+  // Evaluate at frame 20 (group evaluated X should be 150)
+  const evaluatedMap = scene.evaluate(20);
+  assert.strictEqual(evaluatedMap.get('player_group').transform.x, 150);
+
+  // World transform with evaluated parent:
+  // Group at evaluated (150, 80), child local at (20, 10) => world X is 170, world Y is 90
+  const evalGroupTransform = TimelineEvaluator.getEvaluatedTransform(group, evaluatedMap);
+  const childWorldX = evalGroupTransform.x + sprite.transform.x;
+  const childWorldY = evalGroupTransform.y + sprite.transform.y;
+  assert.strictEqual(childWorldX, 170);
+  assert.strictEqual(childWorldY, 90);
+});
+
+test('BETA-UI-2.11: Pre-built Demo Scenes verify against specification', () => {
+  // 1. Pikachu Entrance
+  const pikaFilePath = path.join(__dirname, '..', 'project', 'screens', 'PikachuEntrance.json');
+  assert.ok(fs.existsSync(pikaFilePath));
+  const pikaData = JSON.parse(fs.readFileSync(pikaFilePath, 'utf8'));
+  const pikaScene = new SceneModel(pikaData);
+
+  assert.strictEqual(pikaScene.fps, 60);
+  assert.strictEqual(pikaScene.durationFrames, 90);
+  assert.ok(pikaScene.tracks.some(t => t.targetNodeId === 'pikachu_sprite' && t.propertyPath === 'transform.x'));
+
+  // Test prompt 37 exact keyframe checks:
+  // Frame 0: X = 320, Opacity = 0
+  const ev0 = pikaScene.evaluate(0).get('pikachu_sprite');
+  assert.strictEqual(ev0.transform.x, 320);
+  assert.strictEqual(ev0.opacity, 0);
+
+  // Frame 15: X = 280, Opacity = 0.5
+  const ev15 = pikaScene.evaluate(15).get('pikachu_sprite');
+  assert.strictEqual(ev15.transform.x, 280);
+  assert.strictEqual(ev15.opacity, 0.5);
+
+  // Frame 30: X = 240, Opacity = 1
+  const ev30 = pikaScene.evaluate(30).get('pikachu_sprite');
+  assert.strictEqual(ev30.transform.x, 240);
+  assert.strictEqual(ev30.opacity, 1.0);
+
+  // Frame 60: X = 220
+  const ev60 = pikaScene.evaluate(60).get('pikachu_sprite');
+  assert.strictEqual(ev60.transform.x, 220);
+
+  // 2. Simple Menu Animation
+  const menuFilePath = path.join(__dirname, '..', 'project', 'screens', 'MenuAnimation.json');
+  assert.ok(fs.existsSync(menuFilePath));
+  const menuData = JSON.parse(fs.readFileSync(menuFilePath, 'utf8'));
+  const menuScene = new SceneModel(menuData);
+  assert.strictEqual(menuScene.tracks.length >= 7, true);
+  assert.strictEqual(menuScene.evaluate(0).get('menu_panel').transform.y, 250);
+  assert.strictEqual(menuScene.evaluate(25).get('menu_panel').transform.y, 20);
+
+  // 3. Dual Screen Scene
+  const dualFilePath = path.join(__dirname, '..', 'project', 'screens', 'DualScreenScene.json');
+  assert.ok(fs.existsSync(dualFilePath));
+  const dualData = JSON.parse(fs.readFileSync(dualFilePath, 'utf8'));
+  const dualScene = new SceneModel(dualData);
+  assert.strictEqual(dualScene.components.filter(c => c.screen === 'top').length >= 3, true);
+  assert.strictEqual(dualScene.components.filter(c => c.screen === 'bottom').length >= 3, true);
+  assert.ok(dualScene.tracks.some(t => t.targetNodeId === 'top_charizard'));
+  assert.ok(dualScene.tracks.some(t => t.targetNodeId === 'bottom_panel'));
 });
 
 async function runAllTests() {

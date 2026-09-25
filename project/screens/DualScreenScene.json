@@ -1,0 +1,212 @@
+{
+  "schemaVersion": 2,
+  "id": "DualScreenScene",
+  "name": "Dual Screen Scene",
+  "fps": 60,
+  "durationFrames": 90,
+  "currentFrame": 0,
+  "top": {
+    "width": 400,
+    "height": 240,
+    "backgroundColor": "#10141f"
+  },
+  "bottom": {
+    "width": 320,
+    "height": 240,
+    "backgroundColor": "#171a26"
+  },
+  "components": [
+    {
+      "id": "top_bg",
+      "type": "Image",
+      "screen": "top",
+      "x": 0,
+      "y": 0,
+      "width": 400,
+      "height": 240,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 1,
+      "parent": null,
+      "properties": {
+        "asset": "bg_arena_plains",
+        "fit": "stretch"
+      }
+    },
+    {
+      "id": "top_charizard",
+      "type": "PokemonSprite",
+      "screen": "top",
+      "x": 230,
+      "y": 40,
+      "width": 128,
+      "height": 128,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 2,
+      "parent": null,
+      "properties": {
+        "species": "Charizard",
+        "nationalDexId": 6,
+        "facing": "front",
+        "shiny": false
+      },
+      "opacity": 0
+    },
+    {
+      "id": "top_label",
+      "type": "PixelText",
+      "screen": "top",
+      "x": 20,
+      "y": 20,
+      "width": 200,
+      "height": 24,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 3,
+      "parent": null,
+      "properties": {
+        "text": "CHARIZARD Lv. 50",
+        "fontSize": 14,
+        "color": "#ffcb05",
+        "align": "left"
+      }
+    },
+    {
+      "id": "bottom_panel",
+      "type": "RogueBox",
+      "screen": "bottom",
+      "x": 20,
+      "y": 20,
+      "width": 280,
+      "height": 190,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 1,
+      "parent": null,
+      "properties": {
+        "backgroundColor": "#202538",
+        "borderColor": "#38bdf8",
+        "borderWidth": 2,
+        "borderRadius": 6
+      }
+    },
+    {
+      "id": "bottom_prompt",
+      "type": "PixelText",
+      "screen": "bottom",
+      "x": 35,
+      "y": 45,
+      "width": 250,
+      "height": 24,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 2,
+      "parent": "bottom_panel",
+      "properties": {
+        "text": "What will CHARIZARD do?",
+        "fontSize": 12,
+        "color": "#f1f5f9",
+        "align": "center"
+      }
+    },
+    {
+      "id": "bottom_action_btn",
+      "type": "TouchButton",
+      "screen": "bottom",
+      "x": 50,
+      "y": 100,
+      "width": 220,
+      "height": 50,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 3,
+      "parent": "bottom_panel",
+      "properties": {
+        "label": "🔥 FLAMETHROWER",
+        "action": "ACTION_FLAMETHROWER",
+        "focusId": 0
+      }
+    }
+  ],
+  "tracks": [
+    {
+      "id": "track_charizard_scale_x",
+      "targetNodeId": "top_charizard",
+      "propertyPath": "transform.scaleX",
+      "displayName": "top_charizard.Scale X",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 0, "value": 0.2, "interpolation": "easeOut" },
+        { "frame": 35, "value": 1.0, "interpolation": "linear" }
+      ]
+    },
+    {
+      "id": "track_charizard_scale_y",
+      "targetNodeId": "top_charizard",
+      "propertyPath": "transform.scaleY",
+      "displayName": "top_charizard.Scale Y",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 0, "value": 0.2, "interpolation": "easeOut" },
+        { "frame": 35, "value": 1.0, "interpolation": "linear" }
+      ]
+    },
+    {
+      "id": "track_charizard_opacity",
+      "targetNodeId": "top_charizard",
+      "propertyPath": "opacity",
+      "displayName": "top_charizard.Opacity",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 0, "value": 0, "interpolation": "linear" },
+        { "frame": 35, "value": 1.0, "interpolation": "linear" }
+      ]
+    },
+    {
+      "id": "track_bottom_panel_y",
+      "targetNodeId": "bottom_panel",
+      "propertyPath": "transform.y",
+      "displayName": "bottom_panel.Position Y",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 15, "value": 240, "interpolation": "easeOut" },
+        { "frame": 45, "value": 20, "interpolation": "linear" }
+      ]
+    },
+    {
+      "id": "track_btn_scale_x",
+      "targetNodeId": "bottom_action_btn",
+      "propertyPath": "transform.scaleX",
+      "displayName": "bottom_action_btn.Scale X",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 40, "value": 0.5, "interpolation": "easeOut" },
+        { "frame": 60, "value": 1.0, "interpolation": "linear" }
+      ]
+    },
+    {
+      "id": "track_btn_scale_y",
+      "targetNodeId": "bottom_action_btn",
+      "propertyPath": "transform.scaleY",
+      "displayName": "bottom_action_btn.Scale Y",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 40, "value": 0.5, "interpolation": "easeOut" },
+        { "frame": 60, "value": 1.0, "interpolation": "linear" }
+      ]
+    }
+  ]
+}

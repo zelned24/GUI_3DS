@@ -3,6 +3,7 @@ import { HistoryManager } from './HistoryManager.js';
 import { Validator } from './Validator.js';
 import { globalRNG } from './DeterministicRNG.js';
 import { SceneModel } from './SceneModel.js';
+import { AnimationTrack } from '../animation/AnimationTrack.js';
 
 /**
  * ProjectModel - Hierarchical project, screen, and scene state manager.
@@ -135,7 +136,8 @@ export class ProjectModel {
         height: screenData.bottom?.height || 240,
         backgroundColor: screenData.bottom?.backgroundColor || '#1a1824'
       },
-      components: comps
+      components: comps,
+      tracks: (screenData.tracks || []).map(t => t instanceof AnimationTrack ? t : AnimationTrack.fromJSON(t))
     };
 
     this.screensMap.set(normalized.id, normalized);
@@ -452,13 +454,18 @@ export class ProjectModel {
 
   toJSON() {
     const screen = this.getActiveScreen();
+    if (!screen) return null;
+    if (typeof screen.toJSON === 'function') {
+      return screen.toJSON();
+    }
     return {
-      schemaVersion: 1,
+      schemaVersion: screen.schemaVersion || 1,
       id: screen.id,
       name: screen.name,
       top: { ...screen.top },
       bottom: { ...screen.bottom },
-      components: screen.components.map(c => c.toJSON())
+      components: (screen.components || []).map(c => c.toJSON()),
+      tracks: (screen.tracks || []).map(t => typeof t.toJSON === 'function' ? t.toJSON() : t)
     };
   }
 

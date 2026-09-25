@@ -1,5 +1,7 @@
 import { ComponentRegistry } from '../components/ComponentRegistry.js';
 import { globalRNG } from './DeterministicRNG.js';
+import { AnimationTrack } from '../animation/AnimationTrack.js';
+import { TimelineEvaluator } from '../animation/TimelineEvaluator.js';
 
 /**
  * SceneModel - Root 2D Composition Scene for Nintendo 3DS.
@@ -8,6 +10,7 @@ import { globalRNG } from './DeterministicRNG.js';
  * Represents a timed, dual-screen 2D scene composition containing:
  * - Scene Graph (nodes on TOP 400x240, BOTTOM 320x240, or GLOBAL)
  * - Duration in frames and framerate (default 60 FPS)
+ * - Current Playhead frame (integer frame)
  * - Animation tracks (for keyframe property animation)
  * - Timeline markers (Event, Audio, Comment, Sync)
  * - Audio cues (sound effects and background music cues)
@@ -23,6 +26,7 @@ export class SceneModel {
     this.name = data.name || this.id;
     this.durationFrames = Math.max(1, Math.round(data.durationFrames ?? 60));
     this.fps = Math.round(data.fps ?? 60);
+    this.currentFrame = Math.max(0, Math.min(this.durationFrames, Math.round(data.currentFrame ?? 0)));
 
     // Dual screen dimensions and backgrounds
     this.top = {
@@ -43,7 +47,16 @@ export class SceneModel {
     this._initNodes(rawNodes);
 
     // Animation tracks (for Timeline)
-    this.tracks = Array.isArray(data.tracks) ? data.tracks.map(t => ({ ...t })) : [];
+    this.tracks = [];
+    if (Array.isArray(data.tracks)) {
+      for (const t of data.tracks) {
+        if (t instanceof AnimationTrack) {
+          this.tracks.push(t);
+        } else {
+          this.tracks.push(new AnimationTrack(t));
+        }
+      }
+    }
 
     // Timeline markers
     this.markers = Array.isArray(data.markers) ? data.markers.map(m => ({
@@ -122,7 +135,7 @@ export class SceneModel {
   }
 
   /**
-   * Removes a node by ID, along with reparenting or removing its children.
+   * Removes a node by ID, along with reparenting or removing its children and associated tracks.
    * @param {string} nodeId 
    */
   removeNode(nodeId) {
@@ -152,7 +165,7 @@ export class SceneModel {
     }
 
     // Remove any animation tracks associated with this node
-    this.tracks = this.tracks.filter(t => t.nodeId !== nodeId);
+    this.tracks = this.tracks.filter(t => t.targetNodeId !== nodeId);
 
     return removed;
   }
@@ -221,6 +234,119 @@ export class SceneModel {
     }
   }
 
+  // --- Animation Track Operations ---
+
+  /**
+   * Adds or registers an animation track.
+   * @param {AnimationTrack|Object} trackOrData 
+   * @returns {AnimationTrack}
+   */
+  addTrack(trackOrData) {
+    const track = trackOrData instanceof AnimationTrack
+      ? trackOrData
+      : new AnimationTrack(trackOrData);
+
+    const existingIdx = this.tracks.findIndex(t => t.id === track.id);
+    if (existingIdx !== -1) {
+      this.tracks[existingIdx] = track;
+    } else {
+      this.tracks.push(track);
+    }
+    return track;
+  }
+
+  /**
+   * Removes an animation track by ID.
+   * @param {string} trackId 
+   * @returns {AnimationTrack|null}
+   */
+  removeTrack(trackId) {
+    const idx = this.tracks.findIndex(t => t.id === trackId);
+    if (idx === -1) return null;
+    const [removed] = this.tracks.splice(idx, 1);
+    return removed;
+  }
+
+  /**
+   * Retrieves an animation track by ID.
+   * @param {string} trackId 
+   */
+  getTrack(trackId) {
+    return this.tracks.find(t => t.id === trackId) || null;
+  }
+
+  /**
+   * Returns all tracks targeting a specific node.
+   * @param {string} nodeId 
+   * @returns {AnimationTrack[]}
+   */
+  getTracksForNode(nodeId) {
+    return this.tracks.filter(t => t.targetNodeId === nodeId);
+  }
+
+  /**
+   * Finds a track for a specific node and property path.
+   * @param {string} nodeId 
+   * @param {string} propertyPath 
+   */
+  getTrackForProperty(nodeId, propertyPath) {
+    return this.tracks.find(t => t.targetNodeId === nodeId && t.propertyPath === propertyPath) || null;
+  }
+
+  // --- Time & Playhead Operations ---
+
+  /**
+   * Seeks the timeline playhead to an integer frame.
+   * Clamps between 0 and durationFrames.
+   * @param {number} frame 
+   * @returns {number} The updated integer currentFrame
+   */
+  seek(frame) {
+    this.currentFrame = Math.max(0, Math.min(this.durationFrames, Math.round(frame)));
+    return this.currentFrame;
+  }
+
+  /**
+   * Converts a frame number to fractional seconds at current scene FPS.
+   * @param {number} [frame=this.currentFrame] 
+   * @returns {number}
+   */
+  frameToSeconds(frame = this.currentFrame) {
+    return parseFloat((frame / this.fps).toFixed(3));
+  }
+
+  /**
+   * Converts seconds to integer frame at current scene FPS.
+   * @param {number} seconds 
+   * @returns {number}
+   */
+  secondsToFrame(seconds) {
+    return Math.max(0, Math.round(seconds * this.fps));
+  }
+
+  /**
+   * Formats time display as MM:SS.mmm
+   * @param {number} [frame=this.currentFrame] 
+   * @returns {string}
+   */
+  getFormattedTime(frame = this.currentFrame) {
+    const totalSecs = frame / this.fps;
+    const mins = Math.floor(totalSecs / 60);
+    const secs = Math.floor(totalSecs % 60);
+    const millis = Math.floor((totalSecs % 1) * 1000);
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(millis).padStart(3, '0')}`;
+  }
+
+  /**
+   * Evaluates the active scene at the specified frame (or current playhead frame).
+   * Does not mutate persistent document state.
+   * @param {number} [frame=this.currentFrame] 
+   * @returns {Map<string, Object>} Map of nodeId -> evaluated state overrides
+   */
+  evaluate(frame = this.currentFrame) {
+    return TimelineEvaluator.evaluateScene(this, frame);
+  }
+
   /**
    * Adds a timeline marker.
    * @param {Object} marker 
@@ -266,6 +392,7 @@ export class SceneModel {
       name: this.name,
       durationFrames: this.durationFrames,
       fps: this.fps,
+      currentFrame: this.currentFrame,
       top: {
         width: this.top.width,
         height: this.top.height,
@@ -277,7 +404,7 @@ export class SceneModel {
         backgroundColor: this.bottom.backgroundColor
       },
       nodes: this.nodes.map(n => (typeof n.toJSON === 'function' ? n.toJSON() : n)),
-      tracks: [...this.tracks],
+      tracks: this.tracks.map(t => (typeof t.toJSON === 'function' ? t.toJSON() : t)),
       markers: [...this.markers],
       audioCues: [...this.audioCues],
       metadata: { ...this.metadata }

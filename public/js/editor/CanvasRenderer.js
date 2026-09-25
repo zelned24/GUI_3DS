@@ -298,22 +298,41 @@ export class CanvasRenderer {
     const screen = this.model.getActiveScreen();
     if (!screen) return;
 
+    // Evaluate scene animation at current frame if screen has animation capability
+    const evaluatedMap = typeof screen.evaluate === 'function' ? screen.evaluate() : null;
+
     // Sort by zIndex
     const comps = screen.components
-      .filter(c => (c.screen === screenType || c.screen === 'global') && c.visible !== false)
+      .filter(c => (c.screen === screenType || c.screen === 'global'))
       .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
 
     for (const comp of comps) {
-      comp.render(ctx);
+      comp.render(ctx, { evaluatedMap });
     }
   }
 
   _drawSelection(ctx, screenType) {
+    const screen = this.model.getActiveScreen();
+    const evaluatedMap = typeof screen?.evaluate === 'function' ? screen.evaluate() : null;
+
     const selectedComps = this.selection.getSelectedComponents()
       .filter(c => c.screen === screenType);
 
     for (const comp of selectedComps) {
-      const { x, y, width: w, height: h } = comp;
+      let x = comp.x;
+      let y = comp.y;
+      let w = comp.width;
+      let h = comp.height;
+
+      if (evaluatedMap && evaluatedMap.has(comp.id)) {
+        const tr = evaluatedMap.get(comp.id).transform;
+        if (tr) {
+          if (tr.x !== undefined) x = Math.round(tr.x);
+          if (tr.y !== undefined) y = Math.round(tr.y);
+          if (tr.width !== undefined) w = Math.round(tr.width);
+          if (tr.height !== undefined) h = Math.round(tr.height);
+        }
+      }
 
       // Selection bounding box
       ctx.save();

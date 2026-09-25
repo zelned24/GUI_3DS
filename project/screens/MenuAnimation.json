@@ -1,0 +1,186 @@
+{
+  "schemaVersion": 2,
+  "id": "MenuAnimation",
+  "name": "Simple Menu Animation",
+  "fps": 60,
+  "durationFrames": 75,
+  "currentFrame": 0,
+  "top": {
+    "width": 400,
+    "height": 240,
+    "backgroundColor": "#12141c"
+  },
+  "bottom": {
+    "width": 320,
+    "height": 240,
+    "backgroundColor": "#1a1824"
+  },
+  "components": [
+    {
+      "id": "menu_panel",
+      "type": "RogueBox",
+      "screen": "bottom",
+      "x": 20,
+      "y": 20,
+      "width": 280,
+      "height": 200,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 1,
+      "parent": null,
+      "properties": {
+        "backgroundColor": "#231e2b",
+        "borderColor": "#c83834",
+        "borderWidth": 2,
+        "borderRadius": 6
+      }
+    },
+    {
+      "id": "btn_fight",
+      "type": "TouchButton",
+      "screen": "bottom",
+      "x": 40,
+      "y": 45,
+      "width": 240,
+      "height": 38,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 2,
+      "parent": "menu_panel",
+      "properties": {
+        "label": "⚔️ FIGHT",
+        "action": "ACTION_FIGHT",
+        "focusId": 0
+      }
+    },
+    {
+      "id": "btn_bag",
+      "type": "TouchButton",
+      "screen": "bottom",
+      "x": 40,
+      "y": 95,
+      "width": 240,
+      "height": 38,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 2,
+      "parent": "menu_panel",
+      "properties": {
+        "label": "🎒 BAG",
+        "action": "ACTION_BAG",
+        "focusId": 1
+      }
+    },
+    {
+      "id": "btn_pokemon",
+      "type": "TouchButton",
+      "screen": "bottom",
+      "x": 40,
+      "y": 145,
+      "width": 240,
+      "height": 38,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 2,
+      "parent": "menu_panel",
+      "properties": {
+        "label": "⚡ POKÉMON",
+        "action": "ACTION_POKEMON",
+        "focusId": 2
+      }
+    }
+  ],
+  "tracks": [
+    {
+      "id": "track_panel_y",
+      "targetNodeId": "menu_panel",
+      "propertyPath": "transform.y",
+      "displayName": "menu_panel.Position Y",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 0, "value": 250, "interpolation": "easeOut" },
+        { "frame": 25, "value": 20, "interpolation": "linear" }
+      ]
+    },
+    {
+      "id": "track_btn1_x",
+      "targetNodeId": "btn_fight",
+      "propertyPath": "transform.x",
+      "displayName": "btn_fight.Position X",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 10, "value": -200, "interpolation": "easeOut" },
+        { "frame": 30, "value": 40, "interpolation": "linear" }
+      ]
+    },
+    {
+      "id": "track_btn1_opacity",
+      "targetNodeId": "btn_fight",
+      "propertyPath": "opacity",
+      "displayName": "btn_fight.Opacity",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 10, "value": 0, "interpolation": "linear" },
+        { "frame": 30, "value": 1, "interpolation": "linear" }
+      ]
+    },
+    {
+      "id": "track_btn2_x",
+      "targetNodeId": "btn_bag",
+      "propertyPath": "transform.x",
+      "displayName": "btn_bag.Position X",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 20, "value": -200, "interpolation": "easeOut" },
+        { "frame": 40, "value": 40, "interpolation": "linear" }
+      ]
+    },
+    {
+      "id": "track_btn2_opacity",
+      "targetNodeId": "btn_bag",
+      "propertyPath": "opacity",
+      "displayName": "btn_bag.Opacity",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 20, "value": 0, "interpolation": "linear" },
+        { "frame": 40, "value": 1, "interpolation": "linear" }
+      ]
+    },
+    {
+      "id": "track_btn3_x",
+      "targetNodeId": "btn_pokemon",
+      "propertyPath": "transform.x",
+      "displayName": "btn_pokemon.Position X",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 30, "value": -200, "interpolation": "easeOut" },
+        { "frame": 50, "value": 40, "interpolation": "linear" }
+      ]
+    },
+    {
+      "id": "track_btn3_opacity",
+      "targetNodeId": "btn_pokemon",
+      "propertyPath": "opacity",
+      "displayName": "btn_pokemon.Opacity",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 30, "value": 0, "interpolation": "linear" },
+        { "frame": 50, "value": 1, "interpolation": "linear" }
+      ]
+    }
+  ]
+}

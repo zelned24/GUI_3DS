@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 2,
+  "id": "PikachuEntrance",
+  "name": "Pikachu Entrance",
+  "fps": 60,
+  "durationFrames": 90,
+  "currentFrame": 0,
+  "top": {
+    "width": 400,
+    "height": 240,
+    "backgroundColor": "#12141c"
+  },
+  "bottom": {
+    "width": 320,
+    "height": 240,
+    "backgroundColor": "#1a1824"
+  },
+  "components": [
+    {
+      "id": "bg_arena",
+      "type": "Image",
+      "screen": "top",
+      "x": 0,
+      "y": 0,
+      "width": 400,
+      "height": 240,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 1,
+      "parent": null,
+      "properties": {
+        "asset": "bg_arena_plains",
+        "fit": "stretch"
+      }
+    },
+    {
+      "id": "pikachu_sprite",
+      "type": "PokemonSprite",
+      "screen": "top",
+      "x": 320,
+      "y": 60,
+      "width": 112,
+      "height": 112,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 2,
+      "parent": null,
+      "properties": {
+        "species": "Pikachu",
+        "nationalDexId": 25,
+        "facing": "front",
+        "shiny": false
+      },
+      "opacity": 0
+    },
+    {
+      "id": "title_banner",
+      "type": "PixelText",
+      "screen": "top",
+      "x": 20,
+      "y": 20,
+      "width": 360,
+      "height": 32,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 3,
+      "parent": null,
+      "properties": {
+        "text": "WILD PIKACHU APPEARED!",
+        "fontSize": 16,
+        "color": "#ffcb05",
+        "align": "center"
+      }
+    }
+  ],
+  "tracks": [
+    {
+      "id": "track_pikachu_x",
+      "targetNodeId": "pikachu_sprite",
+      "propertyPath": "transform.x",
+      "displayName": "pikachu_sprite.Position X",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 0, "value": 320, "interpolation": "linear" },
+        { "frame": 15, "value": 280, "interpolation": "linear" },
+        { "frame": 30, "value": 240, "interpolation": "linear" },
+        { "frame": 60, "value": 220, "interpolation": "easeInOut" }
+      ]
+    },
+    {
+      "id": "track_pikachu_opacity",
+      "targetNodeId": "pikachu_sprite",
+      "propertyPath": "opacity",
+      "displayName": "pikachu_sprite.Opacity",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 0, "value": 0, "interpolation": "linear" },
+        { "frame": 15, "value": 0.5, "interpolation": "linear" },
+        { "frame": 30, "value": 1.0, "interpolation": "linear" }
+      ]
+    },
+    {
+      "id": "track_title_y",
+      "targetNodeId": "title_banner",
+      "propertyPath": "transform.y",
+      "displayName": "title_banner.Position Y",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 0, "value": -40, "interpolation": "easeOut" },
+        { "frame": 25, "value": 20, "interpolation": "linear" }
+      ]
+    }
+  ]
+}

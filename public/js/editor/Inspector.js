@@ -1,14 +1,17 @@
 import { PropertyTypes } from '../core/PropertySystem.js';
+import { AnimationTrack } from '../animation/AnimationTrack.js';
 
 /**
  * Inspector - Schema-driven two-way property binding inspector for 3DS UI components & nodes.
  * Automatically constructs property controls from Component schemas.
  */
 export class Inspector {
-  constructor(containerElement, projectModel, selectionManager) {
+  constructor(containerElement, projectModel, selectionManager, options = {}) {
     this.container = containerElement;
     this.model = projectModel;
     this.selection = selectionManager;
+    this.options = options;
+    this.timeline = options.timeline || null;
     this.isEditing = false;
 
     this._setupSubscriptions();
@@ -101,14 +104,8 @@ export class Inspector {
         <div class="section-title">3DS Spatial Transform</div>
 
         <div class="field-grid-2">
-          <div class="field-row">
-            <label>X (px)</label>
-            <input type="number" id="prop_x" class="input-num" value="${comp.x}" step="1" />
-          </div>
-          <div class="field-row">
-            <label>Y (px)</label>
-            <input type="number" id="prop_y" class="input-num" value="${comp.y}" step="1" />
-          </div>
+          ${this._renderAnimableRow(comp, screen, 'Position X', 'x', 'transform.x', comp.x, 1)}
+          ${this._renderAnimableRow(comp, screen, 'Position Y', 'y', 'transform.y', comp.y, 1)}
         </div>
 
         <div class="field-grid-2">
@@ -123,25 +120,13 @@ export class Inspector {
         </div>
 
         <div class="field-grid-2">
-          <div class="field-row">
-            <label>Scale X</label>
-            <input type="number" id="prop_scaleX" class="input-num" value="${comp.transform.scaleX}" step="0.05" />
-          </div>
-          <div class="field-row">
-            <label>Scale Y</label>
-            <input type="number" id="prop_scaleY" class="input-num" value="${comp.transform.scaleY}" step="0.05" />
-          </div>
+          ${this._renderAnimableRow(comp, screen, 'Scale X', 'scaleX', 'transform.scaleX', comp.transform.scaleX, 0.05)}
+          ${this._renderAnimableRow(comp, screen, 'Scale Y', 'scaleY', 'transform.scaleY', comp.transform.scaleY, 0.05)}
         </div>
 
         <div class="field-grid-2">
-          <div class="field-row">
-            <label>Rotation (°)</label>
-            <input type="number" id="prop_rotation" class="input-num" value="${comp.transform.rotation}" step="1" />
-          </div>
-          <div class="field-row">
-            <label>Opacity</label>
-            <input type="number" id="prop_opacity" class="input-num" value="${comp.opacity}" min="0" max="1" step="0.05" />
-          </div>
+          ${this._renderAnimableRow(comp, screen, 'Rotation (°)', 'rotation', 'transform.rotation', comp.transform.rotation, 1)}
+          ${this._renderAnimableRow(comp, screen, 'Opacity', 'opacity', 'opacity', comp.opacity, 0.05, 0, 1)}
         </div>
 
         <div class="field-grid-2">
@@ -260,6 +245,26 @@ export class Inspector {
     }
   }
 
+  _renderAnimableRow(comp, screen, label, propKey, propPath, value, step = 1, min = null, max = null) {
+    const tracks = screen?.tracks || [];
+    const track = tracks.find(t => t.targetNodeId === comp.id && (t.propertyPath === propPath || t.propertyPath === propKey));
+    const currentFrame = screen?.currentFrame || 0;
+    const hasTrack = !!track;
+    const hasKey = hasTrack && track.keyframes.some(k => k.frame === currentFrame);
+
+    return `
+      <div class="field-row animable-field-row">
+        <label>${label} ${hasTrack ? '<span style="color:var(--accent-blue);font-size:9px;">●</span>' : ''}</label>
+        <div class="field-input-wrap">
+          <input type="number" id="prop_${propKey}" class="input-num" value="${value}" step="${step}" ${min !== null ? `min="${min}"` : ''} ${max !== null ? `max="${max}"` : ''} />
+          <button type="button" class="btn-prop-key ${hasKey ? 'keyed' : (hasTrack ? 'tracked' : '')}" data-comp-id="${comp.id}" data-prop-path="${propPath}" data-prop-key="${propKey}" title="${hasKey ? 'Keyframe at frame ' + currentFrame + ' (Click to toggle)' : (hasTrack ? 'Track exists (Click to add keyframe at frame ' + currentFrame + ')' : 'Add animation track & keyframe')}">
+            ${hasKey ? '◆' : (hasTrack ? '◇' : '●')}
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
   _attachInputHandlers(comp, schema) {
     const bindDirect = (id, propKey, isNumeric = false, isBool = false) => {
       const el = this.container.querySelector(`#${id}`);
@@ -277,6 +282,18 @@ export class Inspector {
         }
 
         this.model.updateComponent(comp.id, { [propKey]: val });
+
+        // Auto-Key support
+        if (this.timeline && this.timeline.autoKeyEnabled) {
+          const screen = this.model.getActiveScreen();
+          const targetProp = ['x', 'y', 'scaleX', 'scaleY', 'rotation'].includes(propKey) ? `transform.${propKey}` : propKey;
+          const track = (screen?.tracks || []).find(t => t.targetNodeId === comp.id && (t.propertyPath === targetProp || t.propertyPath === propKey));
+          if (track) {
+            track.addKeyframe(screen.currentFrame || 0, val);
+            this.timeline.render();
+          }
+        }
+
         setTimeout(() => { this.isEditing = false; }, 50);
       };
 
@@ -347,6 +364,52 @@ export class Inspector {
         el.addEventListener('change', handler);
       }
     }
+
+    // Keyframe manual buttons [●] / [◆] / [◇]
+    this.container.querySelectorAll('.btn-prop-key').forEach(btn => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        const compId = btn.getAttribute('data-comp-id');
+        const propPath = btn.getAttribute('data-prop-path');
+        const propKey = btn.getAttribute('data-prop-key');
+        const screen = this.model.getActiveScreen();
+        if (!screen) return;
+
+        let track = (screen.tracks || []).find(t => t.targetNodeId === compId && (t.propertyPath === propPath || t.propertyPath === propKey));
+        const currentFrame = screen.currentFrame || 0;
+        let currentVal = 0;
+        if (['x', 'y', 'width', 'height', 'opacity', 'zIndex'].includes(propKey)) {
+          currentVal = comp[propKey] !== undefined ? comp[propKey] : 0;
+        } else if (comp.transform && comp.transform[propKey] !== undefined) {
+          currentVal = comp.transform[propKey];
+        }
+
+        if (!track) {
+          if (this.timeline) {
+            track = this.timeline.addTrack(compId, propPath);
+          } else {
+            track = new AnimationTrack({ targetNodeId: compId, propertyPath: propPath, displayName: `${compId}.${propKey}` });
+            screen.tracks = screen.tracks || [];
+            screen.tracks.push(track);
+          }
+        }
+
+        if (track) {
+          const existingKey = track.keyframes.find(k => k.frame === currentFrame);
+          if (existingKey) {
+            track.removeKeyframe(currentFrame);
+          } else {
+            track.addKeyframe(currentFrame, currentVal, 'linear');
+          }
+          if (this.timeline) {
+            this.timeline.selectedNodeId = compId;
+            this.timeline.selectedTrackId = track.id;
+            this.timeline.render();
+          }
+          this.render(comp);
+        }
+      };
+    });
 
     // Action buttons
     const dupBtn = this.container.querySelector('#btn_duplicate_comp');

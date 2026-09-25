@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "target": "Nintendo 3DS",
   "screens": [
+    "PikachuEntrance",
+    "MenuAnimation",
+    "DualScreenScene",
     "ExampleScreen"
   ],
   "settings": {

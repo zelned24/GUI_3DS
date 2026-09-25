@@ -126,25 +126,53 @@ export class UINode {
 
   /**
    * Render node onto canvas context.
+   * If options.evaluatedMap is passed, applies transient animated properties without mutating base document data.
    */
   render(ctx, options = {}) {
-    if (!this.visible) return;
-    ctx.save();
-    ctx.globalAlpha = (ctx.globalAlpha || 1.0) * this.opacity;
-    ctx.translate(this.x, this.y);
+    let tf = this.transform;
+    let isVisible = this.visible;
 
-    const hasPivot = (this.transform.pivotX !== 0 || this.transform.pivotY !== 0);
-    const pivotPxX = this.width * (this.transform.pivotX || 0);
-    const pivotPxY = this.height * (this.transform.pivotY || 0);
+    if (options.evaluatedMap && options.evaluatedMap.has(this.id)) {
+      const evalData = options.evaluatedMap.get(this.id);
+      if (evalData.visible !== undefined) {
+        isVisible = evalData.visible;
+      }
+      if (evalData.opacity !== undefined || (evalData.transform && Object.keys(evalData.transform).length > 0)) {
+        const opVal = evalData.opacity !== undefined 
+          ? evalData.opacity 
+          : (evalData.transform?.opacity !== undefined ? evalData.transform.opacity : this.transform.opacity);
+        tf = new Transform({
+          x: evalData.transform?.x !== undefined ? Math.round(evalData.transform.x) : this.transform.x,
+          y: evalData.transform?.y !== undefined ? Math.round(evalData.transform.y) : this.transform.y,
+          width: evalData.transform?.width !== undefined ? Math.round(evalData.transform.width) : this.transform.width,
+          height: evalData.transform?.height !== undefined ? Math.round(evalData.transform.height) : this.transform.height,
+          scaleX: evalData.transform?.scaleX !== undefined ? parseFloat(evalData.transform.scaleX) : this.transform.scaleX,
+          scaleY: evalData.transform?.scaleY !== undefined ? parseFloat(evalData.transform.scaleY) : this.transform.scaleY,
+          pivotX: evalData.transform?.pivotX !== undefined ? parseFloat(evalData.transform.pivotX) : this.transform.pivotX,
+          pivotY: evalData.transform?.pivotY !== undefined ? parseFloat(evalData.transform.pivotY) : this.transform.pivotY,
+          rotation: evalData.transform?.rotation !== undefined ? parseFloat(evalData.transform.rotation) : this.transform.rotation,
+          opacity: Math.max(0, Math.min(1, parseFloat(opVal)))
+        });
+      }
+    }
+
+    if (!isVisible) return;
+    ctx.save();
+    ctx.globalAlpha = (ctx.globalAlpha || 1.0) * tf.opacity;
+    ctx.translate(tf.x, tf.y);
+
+    const hasPivot = (tf.pivotX !== 0 || tf.pivotY !== 0);
+    const pivotPxX = tf.width * (tf.pivotX || 0);
+    const pivotPxY = tf.height * (tf.pivotY || 0);
 
     if (hasPivot) {
       ctx.translate(pivotPxX, pivotPxY);
     }
-    if (this.transform.rotation !== 0) {
-      ctx.rotate((this.transform.rotation * Math.PI) / 180);
+    if (tf.rotation !== 0) {
+      ctx.rotate((tf.rotation * Math.PI) / 180);
     }
-    if (this.transform.scaleX !== 1.0 || this.transform.scaleY !== 1.0) {
-      ctx.scale(this.transform.scaleX, this.transform.scaleY);
+    if (tf.scaleX !== 1.0 || tf.scaleY !== 1.0) {
+      ctx.scale(tf.scaleX, tf.scaleY);
     }
     if (hasPivot) {
       ctx.translate(-pivotPxX, -pivotPxY);

@@ -11,6 +11,7 @@ import { DataStudioUI } from './data/DataStudioUI.js';
 import { BattleLabUI } from './battle/BattleLabUI.js';
 import { AppShell, AppStates } from './shell/AppShell.js';
 import { AssetBrowser } from './editor/AssetBrowser.js';
+import { TimelineUI } from './editor/TimelineUI.js';
 
 /**
  * StudioApp - Main Studio IDE Application orchestrator.
@@ -24,8 +25,16 @@ class StudioApp {
     this.canvas = document.getElementById('studio_canvas');
     this.canvasRenderer = new CanvasRenderer(this.canvas, this.model, this.selection, this.dragResize);
 
+    this.timelineContainer = document.getElementById('timeline_panel');
+    if (this.timelineContainer) {
+      this.timeline = new TimelineUI(this.timelineContainer, this.model, this.selection, this.canvasRenderer);
+    }
+
     this.inspectorContainer = document.getElementById('inspector_content');
-    this.inspector = new Inspector(this.inspectorContainer, this.model, this.selection);
+    this.inspector = new Inspector(this.inspectorContainer, this.model, this.selection, { timeline: this.timeline });
+    if (this.timeline) {
+      this.timeline.inspector = this.inspector;
+    }
 
     this.hierarchyContainer = document.getElementById('hierarchy_content');
     this.hierarchy = new Hierarchy(this.hierarchyContainer, this.model, this.selection);
@@ -78,6 +87,7 @@ class StudioApp {
     this.canvasRenderer.resizeToContainer();
     this.canvasRenderer.render();
     this.hierarchy.render();
+    if (this.timeline) this.timeline.render();
 
     // Start 3DS Game Player Engine (Primary Experience)
     this.appShell.init();
@@ -616,6 +626,7 @@ class StudioApp {
       this.selection.clear();
       this.canvasRenderer.render();
       this.hierarchy.render();
+      if (this.timeline) this.timeline.render();
       this.updateStatus(`Switched to screen "${e.target.value}".`);
     });
 
@@ -670,7 +681,8 @@ class StudioApp {
       if (battleView) battleView.style.display = 'none';
       this.canvasRenderer.resizeToContainer();
       this.canvasRenderer.render();
-      this.updateStatus('UI Studio active — Designing 3DS screens & components.');
+      if (this.timeline) this.timeline.render();
+      this.updateStatus('UI Studio active — Designing 3DS screens & animations.');
     } else if (mode === 'data') {
       document.getElementById('mode_data_studio')?.classList.add('active');
       if (gameView) gameView.style.display = 'none';
