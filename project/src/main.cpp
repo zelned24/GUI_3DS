@@ -2,8 +2,10 @@
 #include "screens/SceneAssets.hpp"
 #include "screens/AssetManifest.hpp"
 #include "gfx/renderer2d.hpp"
+#if !defined(__wasm__)
 #include "runtime/RuntimeAssetManager.hpp"
 #include "runtime/ScenePlayer.hpp"
+#endif
 #include "core/input_manager.hpp"
 
 int main() {
@@ -21,6 +23,7 @@ int main() {
     scene.drawBottom(renderer);
     scene.exit();
 
+#if !defined(__wasm__)
     // 2. Production ScenePlayer playback controller
     Citro2D::ScenePlayer player(Citro2D::g_SceneDefinition);
     player.enter();
@@ -31,6 +34,7 @@ int main() {
     player.pause();
     player.seek(15);
     player.exit();
+#endif
 
     renderer.fini();
     return 0;

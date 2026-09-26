@@ -1,6 +1,8 @@
 #include "gfx/renderer2d.hpp"
 #include "screens/SceneAssets.hpp"
+#if !defined(__wasm__)
 #include "runtime/RuntimeAssetManager.hpp"
+#endif
 #include <cmath>
 
 #if defined(__arm__) || defined(__3DS__) || defined(_3DS)
@@ -56,8 +58,10 @@ bool Renderer2D::init(size_t maxObjects) {
     // 3. Pre-allocate static text buffer to eliminate dynamic allocation per frame (Requirement 36)
     m_textBuf = C2D_TextBufNew(1024);
 
+#if !defined(__wasm__)
     // 4. Initialize global RuntimeAssetManager
     Citro2D::getRuntimeAssetManager().init();
+#endif
 
     m_initialized = true;
     return true;
@@ -75,7 +79,9 @@ void Renderer2D::fini() {
         m_textBuf = nullptr;
     }
 
+#if !defined(__wasm__)
     Citro2D::getRuntimeAssetManager().fini();
+#endif
 
     C2D_Fini();
     C3D_Fini();
@@ -181,6 +187,7 @@ void Renderer2D::drawImage(
 ) {
     if (!assetId || !m_currentTarget || opacity <= 0.001f) return;
 
+#if !defined(__wasm__)
     Citro2D::RuntimeAssetManager& assetMgr = Citro2D::getRuntimeAssetManager();
     assetMgr.recordDrawCall();
 
@@ -197,6 +204,17 @@ void Renderer2D::drawImage(
             drawImageDirect(newlyCached->image, x, y, width, height, rotation, opacity, flipX, flipY, tintColor);
         }
     }
+#else
+    const Citro2D::AssetEntry* entry = Citro2D::findSceneAsset(assetId);
+    if (!entry || !entry->romfsPath) return;
+
+    C2D_SpriteSheet sheet = C2D_SpriteSheetLoad(entry->romfsPath);
+    if (sheet) {
+        C2D_Image img = C2D_SpriteSheetGetImage(sheet, 0);
+        drawImageDirect(img, x, y, width, height, rotation, opacity, flipX, flipY, tintColor);
+        C2D_SpriteSheetFree(sheet);
+    }
+#endif
 }
 
 void Renderer2D::drawText(
