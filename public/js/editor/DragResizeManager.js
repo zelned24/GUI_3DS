@@ -1,3 +1,5 @@
+import { SpatialUtils } from './SpatialUtils.js';
+
 /**
  * DragResizeManager - Handles dragging and resizing elements with strict integer pixel snapping.
  */
@@ -7,6 +9,8 @@ export class DragResizeManager {
     this.selection = selectionManager;
 
     this.state = null; // null | { mode: 'drag'|'resize', ... }
+    this.snapEnabled = true;
+    this.gridSize = 8;
   }
 
   isInteracting() {
@@ -17,7 +21,7 @@ export class DragResizeManager {
    * Start dragging the selected component.
    */
   startDrag(comp, startLogicalX, startLogicalY) {
-    if (!comp) return;
+    if (!comp || comp.locked) return;
     this.state = {
       mode: 'drag',
       comp,
@@ -33,7 +37,7 @@ export class DragResizeManager {
    * Start resizing with a specific handle ('nw', 'n', 'se', etc.).
    */
   startResize(comp, handleId, startLogicalX, startLogicalY) {
-    if (!comp) return;
+    if (!comp || comp.locked) return;
     this.state = {
       mode: 'resize',
       comp,
@@ -59,10 +63,31 @@ export class DragResizeManager {
       const dx = Math.round(currentLogicalX - this.state.startX);
       const dy = Math.round(currentLogicalY - this.state.startY);
 
-      const newX = Math.round(this.state.initialCompX + dx);
-      const newY = Math.round(this.state.initialCompY + dy);
+      let targetX = Math.round(this.state.initialCompX + dx);
+      let targetY = Math.round(this.state.initialCompY + dy);
 
-      this.model.updateComponent(comp.id, { x: newX, y: newY }, false);
+      if (this.snapEnabled) {
+        const activeScene = typeof this.model.getActiveScreen === 'function'
+          ? this.model.getActiveScreen()
+          : this.model;
+
+        const snapped = SpatialUtils.snapPosition({
+          x: targetX,
+          y: targetY,
+          width: comp.width,
+          height: comp.height,
+          screen: comp.screen,
+          scene: activeScene,
+          threshold: 5,
+          gridSize: this.gridSize,
+          guides: activeScene?.guides || [],
+          ignoreNodeId: comp.id
+        });
+        targetX = snapped.x;
+        targetY = snapped.y;
+      }
+
+      this.model.updateComponent(comp.id, { x: targetX, y: targetY }, false);
     } else if (mode === 'resize') {
       const dx = Math.round(currentLogicalX - this.state.startX);
       const dy = Math.round(currentLogicalY - this.state.startY);

@@ -78,6 +78,7 @@ export class Hierarchy {
    */
   _renderNodeBranch(node, depth = 0) {
     const isVisible = node.visible !== false;
+    const isLocked = Boolean(node.locked);
     const hasChildren = node.children && node.children.length > 0;
     const isCollapsed = this.collapsedNodes.has(node.id);
     const indentPx = depth * 14;
@@ -85,7 +86,9 @@ export class Hierarchy {
     const typeIcons = {
       RogueBox: '🔲',
       PixelText: '🔤',
-      TouchButton: '🔘'
+      TouchButton: '🔘',
+      Composition: '🎬',
+      CompositionNode: '🎬'
     };
     const icon = typeIcons[node.type] || '📦';
 
@@ -100,6 +103,9 @@ export class Hierarchy {
 
           <span class="item-visibility ${isVisible ? 'vis-on' : 'vis-off'}" title="Toggle visibility">
             ${isVisible ? '👁' : '🚫'}
+          </span>
+          <span class="item-lock ${isLocked ? 'locked' : ''}" title="${isLocked ? 'Unlock node' : 'Lock node'}">
+            ${isLocked ? '🔒' : '🔓'}
           </span>
           <span class="item-icon">${icon}</span>
           <span class="item-name" title="${node.id}">${node.name || node.id}</span>
@@ -138,9 +144,11 @@ export class Hierarchy {
         if (
           e.target.closest('.item-actions') || 
           e.target.closest('.item-visibility') || 
-          e.target.closest('.tree-expander')
+          e.target.closest('.item-lock') ||
+          e.target.closest('.tree-expander') ||
+          e.target.closest('.tree-rename-input')
         ) return;
-        this.selection.select(id, e.shiftKey);
+        this.selection.select(id, e.shiftKey || e.ctrlKey || e.metaKey);
       });
 
       // Visibility toggle
@@ -152,6 +160,50 @@ export class Hierarchy {
           if (comp) {
             this.model.updateComponent(id, { visible: !comp.visible });
           }
+        });
+      }
+
+      // Lock toggle
+      const lockBtn = el.querySelector('.item-lock');
+      if (lockBtn) {
+        lockBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const comp = this.model.getComponent(id);
+          if (comp) {
+            if (typeof this.model.setNodeLocked === 'function') {
+              this.model.setNodeLocked(id, !comp.locked);
+            } else {
+              this.model.updateComponent(id, { locked: !comp.locked });
+            }
+          }
+        });
+      }
+
+      // Rename on double-click
+      const nameEl = el.querySelector('.item-name');
+      if (nameEl) {
+        nameEl.addEventListener('dblclick', (e) => {
+          e.stopPropagation();
+          const currentName = nameEl.textContent;
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.value = currentName;
+          input.className = 'tree-rename-input';
+          nameEl.replaceWith(input);
+          input.focus();
+          input.select();
+          const commit = () => {
+            const val = input.value.trim();
+            if (val && val !== currentName) {
+              this.model.updateComponent(id, { name: val });
+            }
+            this.render();
+          };
+          input.addEventListener('blur', commit);
+          input.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Enter') commit();
+            if (ev.key === 'Escape') this.render();
+          });
         });
       }
 

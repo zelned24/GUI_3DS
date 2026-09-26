@@ -16,4 +16,20 @@ inline float fmax(float a, float b) {
 inline float fmin(float a, float b) {
     return (a < b) ? a : b;
 }
+
+inline float floor(float x) {
+    int i = (int)x;
+    return (x < (float)i) ? (float)(i - 1) : (float)i;
 }
+
+inline double floor(double x) {
+    long long i = (long long)x;
+    return (x < (double)i) ? (double)(i - 1) : (double)i;
+}
+}
+
+using std::floor;
+using std::round;
+using std::fabs;
+using std::fmax;
+using std::fmin;

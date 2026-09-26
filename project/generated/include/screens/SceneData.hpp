@@ -37,7 +37,8 @@ enum class NodeType : uint8_t {
     Text = 2,
     Panel = 3,
     Button = 4,
-    Group = 5
+    Group = 5,
+    Composition = 6
 };
 
 struct SceneKeyframe {
@@ -98,6 +99,15 @@ struct SceneAudioCue {
     uint8_t channel;
 };
 
+struct SceneCompositionData {
+    const char* sceneId;
+    int32_t startFrame;
+    uint16_t durationFrames;
+    int32_t localFrameOffset;
+    float playbackRate;
+    bool loop;
+};
+
 struct SceneNodeData {
     uint32_t idHash;
     const char* id;
@@ -121,6 +131,9 @@ struct SceneNodeData {
     bool flipY;
     uint32_t tintColor;
     const char* text;
+    // BETA-UI-7: Production UX & Composition
+    bool locked;
+    SceneCompositionData composition;
 };
 
 struct SceneDefinition {

@@ -3,6 +3,7 @@ import { globalRNG } from './DeterministicRNG.js';
 import { AnimationTrack } from '../animation/AnimationTrack.js';
 import { AnimationClip } from '../animation/AnimationClip.js';
 import { TimelineEvaluator } from '../animation/TimelineEvaluator.js';
+import { SpatialUtils } from '../editor/SpatialUtils.js';
 
 /**
  * SceneModel - Root 2D Composition Scene for Nintendo 3DS.
@@ -15,6 +16,7 @@ import { TimelineEvaluator } from '../animation/TimelineEvaluator.js';
  * - Animation tracks (for keyframe property animation)
  * - Timeline markers (Event, Audio, Comment, Sync)
  * - Audio cues (sound effects and background music cues)
+ * - Guides (horizontal and vertical spatial guidelines)
  * - Metadata
  */
 export class SceneModel {
@@ -22,7 +24,7 @@ export class SceneModel {
    * @param {Object} data 
    */
   constructor(data = {}) {
-    this.schemaVersion = data.schemaVersion || ((Array.isArray(data.clips) && data.clips.length > 0) || (Array.isArray(data.sequence) && data.sequence.length > 0) ? 3 : 2);
+    this.schemaVersion = data.schemaVersion !== undefined ? data.schemaVersion : 2;
     this.id = data.id || globalRNG.nextId('scene');
     this.name = data.name || this.id;
     this.durationFrames = Math.max(1, Math.round(data.durationFrames ?? 60));
@@ -105,6 +107,9 @@ export class SceneModel {
       }
     }
 
+    // Guides (Spatial guidelines)
+    this.guides = Array.isArray(data.guides) ? [...data.guides] : [];
+
     // Metadata
     this.metadata = {
       author: data.metadata?.author || 'GUI_3DS Studio',
@@ -161,6 +166,45 @@ export class SceneModel {
         parentNode.addChild(node.id);
       }
     }
+  }
+
+  addComponent(data) {
+    let node = data;
+    if (typeof data.render !== 'function') {
+      const type = data.type || 'RogueBox';
+      node = ComponentRegistry.create(type, data);
+    }
+    this.addNode(node);
+    return node;
+  }
+
+  getComponent(id) {
+    return this.getNode(id);
+  }
+
+  removeComponent(id) {
+    return this.removeNode(id);
+  }
+
+  updateComponent(id, updates) {
+    const node = this.getNode(id);
+    if (!node) return null;
+    if (updates.x !== undefined) node.x = Math.round(Number(updates.x) || 0);
+    if (updates.y !== undefined) node.y = Math.round(Number(updates.y) || 0);
+    if (updates.width !== undefined) node.width = Math.round(Number(updates.width) || 0);
+    if (updates.height !== undefined) node.height = Math.round(Number(updates.height) || 0);
+    if (updates.scaleX !== undefined) node.scaleX = Number(updates.scaleX);
+    if (updates.scaleY !== undefined) node.scaleY = Number(updates.scaleY);
+    if (updates.rotation !== undefined) node.rotation = Number(updates.rotation);
+    if (updates.opacity !== undefined) node.opacity = Number(updates.opacity);
+    if (updates.visible !== undefined) node.visible = Boolean(updates.visible);
+    if (updates.locked !== undefined) node.locked = Boolean(updates.locked);
+    if (updates.zIndex !== undefined) node.zIndex = Number(updates.zIndex);
+    if (updates.name !== undefined) node.name = String(updates.name);
+    if (updates.properties) {
+      node.properties = { ...node.properties, ...updates.properties };
+    }
+    return node;
   }
 
   /**
@@ -549,6 +593,129 @@ export class SceneModel {
     return false;
   }
 
+  // --- Guides Operations (BETA-UI-7) ---
+
+  addGuide(arg1, arg2, arg3, historyManager) {
+    let orientation = 'h';
+    let position = 0;
+    let screen = 'top';
+    let history = historyManager;
+
+    if (typeof arg1 === 'object' && arg1 !== null) {
+      orientation = arg1.orientation || arg1.type || 'h';
+      position = arg1.position ?? 0;
+      screen = arg1.screen || 'top';
+      if (arg2 && typeof arg2.execute === 'function') history = arg2;
+    } else {
+      orientation = arg1 || 'h';
+      position = arg2 ?? 0;
+      screen = arg3 || 'top';
+    }
+
+    const normOrientation = (orientation === 'vertical' || orientation === 'v') ? 'v' : 'h';
+    const guide = {
+      id: globalRNG.nextId('guide'),
+      orientation: normOrientation,
+      position: Math.round(Number(position) || 0),
+      screen
+    };
+
+    if (history && typeof history.execute === 'function') {
+      history.execute({
+        name: 'Add Guide',
+        execute: () => {
+          if (!this.guides.some(g => g.id === guide.id)) this.guides.push(guide);
+        },
+        undo: () => {
+          this.deleteGuide(guide.id);
+        }
+      });
+    } else {
+      this.guides.push(guide);
+    }
+    return guide;
+  }
+
+  moveGuide(id, newPosition, historyManager) {
+    const g = this.guides.find(guide => guide.id === id);
+    if (!g) return false;
+    const oldPos = g.position;
+    const nextPos = Math.round(Number(newPosition) || 0);
+
+    if (historyManager && typeof historyManager.execute === 'function') {
+      historyManager.execute({
+        name: 'Move Guide',
+        execute: () => { g.position = nextPos; },
+        undo: () => { g.position = oldPos; }
+      });
+    } else {
+      g.position = nextPos;
+    }
+    return true;
+  }
+
+  deleteGuide(id, historyManager) {
+    const idx = this.guides.findIndex(g => g.id === id);
+    if (idx === -1) return false;
+    const removed = this.guides[idx];
+
+    if (historyManager && typeof historyManager.execute === 'function') {
+      historyManager.execute({
+        name: 'Delete Guide',
+        execute: () => {
+          const i = this.guides.findIndex(g => g.id === id);
+          if (i !== -1) this.guides.splice(i, 1);
+        },
+        undo: () => {
+          this.guides.splice(idx, 0, removed);
+        }
+      });
+    } else {
+      this.guides.splice(idx, 1);
+    }
+    return true;
+  }
+
+  getGuides() {
+    return [...this.guides];
+  }
+
+  // --- Z-Order & Node Locking Operations (BETA-UI-7) ---
+
+  setNodeLocked(nodeId, locked = true, historyManager = null) {
+    const node = this.getNode(nodeId);
+    if (!node) return false;
+    const oldLocked = Boolean(node.locked);
+    const newLocked = Boolean(locked);
+
+    if (historyManager && typeof historyManager.execute === 'function') {
+      historyManager.execute({
+        name: `Set Node Locked (${nodeId})`,
+        execute: () => { node.locked = newLocked; },
+        undo: () => { node.locked = oldLocked; }
+      });
+    } else {
+      node.locked = newLocked;
+    }
+    return true;
+  }
+
+  bringToFront(nodeId) {
+    return SpatialUtils.setZOrder(nodeId, 'front', this, this.history);
+  }
+
+  sendToBack(nodeId) {
+    return SpatialUtils.setZOrder(nodeId, 'back', this, this.history);
+  }
+
+  bringForward(nodeId) {
+    return SpatialUtils.setZOrder(nodeId, 'forward', this, this.history);
+  }
+
+  sendBackward(nodeId) {
+    return SpatialUtils.setZOrder(nodeId, 'backward', this, this.history);
+  }
+
   // --- Backward-Compatible Migration ---
   static migrateV2ToV3(data) {
     if (!data) return data;
@@ -557,6 +724,24 @@ export class SceneModel {
     if (!Array.isArray(migrated.clips)) migrated.clips = [];
     if (!Array.isArray(migrated.sequence)) migrated.sequence = [];
     return migrated;
+  }
+
+  static migrateV3ToV4(data) {
+    if (!data) return data;
+    const migrated = { ...data };
+    migrated.schemaVersion = 4;
+    if (!Array.isArray(migrated.clips)) migrated.clips = [];
+    if (!Array.isArray(migrated.sequence)) migrated.sequence = [];
+    if (!Array.isArray(migrated.guides)) migrated.guides = [];
+    const nodes = migrated.nodes || migrated.components || [];
+    for (const n of nodes) {
+      if (n.locked === undefined) n.locked = false;
+    }
+    return migrated;
+  }
+
+  static migrateToLatest(data) {
+    return this.migrateV3ToV4(data);
   }
 
   /**
@@ -581,12 +766,14 @@ export class SceneModel {
         height: this.bottom.height,
         backgroundColor: this.bottom.backgroundColor
       },
+      components: this.nodes.map(n => (typeof n.toJSON === 'function' ? n.toJSON() : n)),
       nodes: this.nodes.map(n => (typeof n.toJSON === 'function' ? n.toJSON() : n)),
       tracks: this.tracks.map(t => (typeof t.toJSON === 'function' ? t.toJSON() : t)),
       clips: this.clips.map(c => (typeof c.toJSON === 'function' ? c.toJSON() : c)),
       sequence: [...this.sequence],
       markers: [...this.markers],
       audioCues: [...this.audioCues],
+      guides: [...this.guides],
       metadata: { ...this.metadata }
     };
   }

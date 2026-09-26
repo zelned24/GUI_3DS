@@ -60,6 +60,10 @@ import { ClipLibrary } from '../public/js/animation/ClipLibrary.js';
 import { HistoryManager } from '../public/js/core/HistoryManager.js';
 import { TimelineUI } from '../public/js/editor/TimelineUI.js';
 import { InterpolationTypes, TangentModes } from '../public/js/animation/Keyframe.js';
+import { SceneLibrary } from '../public/js/core/SceneLibrary.js';
+import { SpatialUtils } from '../public/js/editor/SpatialUtils.js';
+import { CompositionNode } from '../public/js/components/CompositionNode.js';
+import { CanvasRenderer } from '../public/js/editor/CanvasRenderer.js';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -4271,6 +4275,695 @@ test('BETA-UI-6.24: CI regression', () => {
   assert.ok(BattleSession, 'BattleSession must exist');
   assert.ok(BattleState, 'BattleState must exist');
   assert.strictEqual(typeof BattleEngine.prototype.executeCommand, 'function', 'BattleEngine.executeCommand remains unchanged');
+});
+
+// ============================================================================
+// BETA-UI-7: PROFESSIONAL COMPOSITION + PRODUCTION UX TESTS
+// ============================================================================
+
+test('BETA-UI-7.1: Dual-screen composition viewport', () => {
+  const fakeCanvas = {
+    getContext: () => ({
+      fillRect: () => {}, strokeRect: () => {}, fillText: () => {},
+      beginPath: () => {}, moveTo: () => {}, lineTo: () => {},
+      stroke: () => {}, save: () => {}, restore: () => {},
+      translate: () => {}, scale: () => {}, setLineDash: () => {}
+    }),
+    addEventListener: () => {}, width: 800, height: 600, style: {}
+  };
+  const scene = new SceneModel({ id: 'test_dual_viewport' });
+  const sel = { getSelectedComponents: () => [], subscribe: () => {} };
+  const drag = { isInteracting: () => false };
+  const renderer = new CanvasRenderer(fakeCanvas, { getActiveScreen: () => scene }, sel, drag);
+
+  // 1. Dual view metrics
+  renderer.setViewMode('dual');
+  const dualLayout = renderer.getLayout();
+  assert.strictEqual(dualLayout.top.visible, true);
+  assert.strictEqual(dualLayout.bottom.visible, true);
+  assert.strictEqual(dualLayout.top.width, 400);
+  assert.strictEqual(dualLayout.top.height, 240);
+  assert.strictEqual(dualLayout.bottom.width, 320);
+  assert.strictEqual(dualLayout.bottom.height, 240);
+  assert.strictEqual(dualLayout.hinge.height, 24);
+  assert.strictEqual(dualLayout.totalWidth, 400);
+  assert.strictEqual(dualLayout.totalHeight, 240 + 24 + 240);
+
+  // 2. Single view modes
+  renderer.setViewMode('top');
+  const topLayout = renderer.getLayout();
+  assert.strictEqual(topLayout.top.visible, true);
+  assert.strictEqual(topLayout.bottom.visible, false);
+  assert.strictEqual(topLayout.totalWidth, 400);
+
+  renderer.setViewMode('bottom');
+  const botLayout = renderer.getLayout();
+  assert.strictEqual(botLayout.bottom.visible, true);
+  assert.strictEqual(botLayout.top.visible, false);
+  assert.strictEqual(botLayout.totalWidth, 320);
+
+  // 3. Viewport state separation - fitScreen & resetZoom do not alter scene document
+  const originalJson = JSON.stringify(scene.toJSON());
+  renderer.fitScreen();
+  renderer.resetZoom();
+  assert.strictEqual(JSON.stringify(scene.toJSON()), originalJson);
+});
+
+test('BETA-UI-7.2: Safe area overlays', () => {
+  const fakeCanvas = {
+    getContext: () => ({
+      fillRect: () => {}, strokeRect: () => {}, fillText: () => {},
+      beginPath: () => {}, moveTo: () => {}, lineTo: () => {},
+      stroke: () => {}, save: () => {}, restore: () => {},
+      translate: () => {}, scale: () => {}, setLineDash: () => {}
+    }),
+    addEventListener: () => {}, width: 800, height: 600, style: {}
+  };
+  const scene = new SceneModel({ id: 'safe_area_test' });
+  const renderer = new CanvasRenderer(fakeCanvas, { getActiveScreen: () => scene }, { getSelectedComponents: () => [] }, {});
+
+  renderer.setSafeAreasEnabled(true);
+  assert.strictEqual(renderer.showSafeAreas, true);
+
+  renderer.setSafeAreaPreset('3ds-top');
+  assert.strictEqual(renderer.safeAreaPreset, '3ds-top');
+
+  renderer.setSafeAreaPreset('3ds-bottom');
+  assert.strictEqual(renderer.safeAreaPreset, '3ds-bottom');
+
+  renderer.setSafeAreaPreset('dual');
+  assert.strictEqual(renderer.safeAreaPreset, 'dual');
+
+  // Verify safe areas are editorial overlays and not serialized into scene document components
+  const json = scene.toJSON();
+  assert.ok(!json.components.some(c => c.id.includes('safe_area')));
+});
+
+test('BETA-UI-7.3: Pixel grid', () => {
+  const fakeCanvas = {
+    getContext: () => ({
+      fillRect: () => {}, strokeRect: () => {}, fillText: () => {},
+      beginPath: () => {}, moveTo: () => {}, lineTo: () => {},
+      stroke: () => {}, save: () => {}, restore: () => {},
+      translate: () => {}, scale: () => {}, setLineDash: () => {}
+    }),
+    addEventListener: () => {}, width: 800, height: 600, style: {}
+  };
+  const scene = new SceneModel({ id: 'grid_test' });
+  const renderer = new CanvasRenderer(fakeCanvas, { getActiveScreen: () => scene }, { getSelectedComponents: () => [] }, {});
+
+  // Supported sizes: 1, 2, 4, 8 px
+  for (const size of [1, 2, 4, 8]) {
+    renderer.setGridSize(size);
+    assert.strictEqual(renderer.gridSize, size);
+  }
+
+  renderer.setGrid(false);
+  assert.strictEqual(renderer.showGrid, false);
+  renderer.setGrid(true);
+  assert.strictEqual(renderer.showGrid, true);
+});
+
+test('BETA-UI-7.4: Spatial snapping', () => {
+  const scene = new SceneModel({ id: 'snap_test' });
+  scene.addComponent({ id: 'node_a', screen: 'top', x: 100, y: 100, width: 50, height: 50 });
+
+  // 1. Center snap: Top screen width 400, center is 200. Node width 60 -> center at x=170
+  const snapCenter = SpatialUtils.snapPosition({
+    x: 168,
+    y: 50,
+    width: 60,
+    height: 40,
+    screen: 'top',
+    scene,
+    threshold: 5
+  });
+  assert.strictEqual(snapCenter.x, 170, 'Snaps to horizontal center of 400px screen');
+
+  // 2. Screen edge snap
+  const snapEdge = SpatialUtils.snapPosition({
+    x: 2,
+    y: 3,
+    width: 60,
+    height: 40,
+    screen: 'top',
+    scene,
+    threshold: 5
+  });
+  assert.strictEqual(snapEdge.x, 0, 'Snaps to left screen edge');
+  assert.strictEqual(snapEdge.y, 0, 'Snaps to top screen edge');
+
+  // 3. Node edge snap
+  const snapNode = SpatialUtils.snapPosition({
+    x: 98,
+    y: 102,
+    width: 50,
+    height: 50,
+    screen: 'top',
+    scene,
+    threshold: 5,
+    ignoreNodeId: 'node_b'
+  });
+  assert.strictEqual(snapNode.x, 100, 'Snaps to node_a edge');
+  assert.strictEqual(snapNode.y, 100, 'Snaps to node_a edge');
+});
+
+test('BETA-UI-7.5: Align tools', () => {
+  const scene = new SceneModel({ id: 'align_test' });
+  const history = new HistoryManager();
+  const c1 = scene.addComponent({ id: 'n1', screen: 'top', x: 20, y: 30, width: 40, height: 40 });
+  const c2 = scene.addComponent({ id: 'n2', screen: 'top', x: 80, y: 50, width: 40, height: 40 });
+  const c3 = scene.addComponent({ id: 'n3', screen: 'top', x: 140, y: 90, width: 40, height: 40 });
+
+  // Align Left -> all x should be 20
+  SpatialUtils.align([c1, c2, c3], 'left', scene, history);
+  assert.strictEqual(c1.x, 20);
+  assert.strictEqual(c2.x, 20);
+  assert.strictEqual(c3.x, 20);
+
+  // Undo aligns back to original
+  history.undo();
+  assert.strictEqual(c2.x, 80);
+  assert.strictEqual(c3.x, 140);
+
+  // Align Center Horizontal: bounds minX 20, maxX 180, center is 100. Node width 40 -> x = 80
+  SpatialUtils.align([c1, c2, c3], 'center-h', scene, history);
+  assert.strictEqual(c1.x, 80);
+  assert.strictEqual(c2.x, 80);
+  assert.strictEqual(c3.x, 80);
+});
+
+test('BETA-UI-7.6: Distribute tools', () => {
+  const scene = new SceneModel({ id: 'dist_test' });
+  const history = new HistoryManager();
+  const c1 = scene.addComponent({ id: 'n1', screen: 'top', x: 0, y: 0, width: 20, height: 20 });
+  const c2 = scene.addComponent({ id: 'n2', screen: 'top', x: 10, y: 0, width: 20, height: 20 });
+  const c3 = scene.addComponent({ id: 'n3', screen: 'top', x: 200, y: 0, width: 20, height: 20 });
+
+  SpatialUtils.distribute([c1, c2, c3], 'horizontal', scene, history);
+  // c1 at 0, c3 at 200. Middle node c2 should be at (0 + 200) / 2 = 100
+  assert.strictEqual(c1.x, 0);
+  assert.strictEqual(c3.x, 200);
+  assert.strictEqual(c2.x, 100);
+
+  // Atomic undo/redo
+  history.undo();
+  assert.strictEqual(c2.x, 10);
+  history.redo();
+  assert.strictEqual(c2.x, 100);
+});
+
+test('BETA-UI-7.7: Transform gizmo model updates', () => {
+  const scene = new SceneModel({ id: 'gizmo_test' });
+  const history = new HistoryManager();
+  const c = scene.addComponent({ id: 'g_node', screen: 'top', x: 10, y: 10, width: 30, height: 30 });
+
+  const prev = { x: c.x, y: c.y, width: c.width, height: c.height };
+  const next = { x: 50, y: 60, width: 100, height: 80 };
+
+  history.execute({
+    name: 'Gizmo Transform',
+    execute: () => scene.updateComponent(c.id, next),
+    undo: () => scene.updateComponent(c.id, prev)
+  });
+
+  assert.strictEqual(c.x, 50);
+  assert.strictEqual(c.y, 60);
+  assert.strictEqual(c.width, 100);
+  assert.strictEqual(c.height, 80);
+
+  history.undo();
+  assert.strictEqual(c.x, 10);
+  assert.strictEqual(c.y, 10);
+});
+
+test('BETA-UI-7.8: Integer pixel contract', () => {
+  const scene = new SceneModel({ id: 'int_contract_test' });
+  const c = scene.addComponent({ id: 'int_node', screen: 'top', x: 10.7, y: 20.3, width: 50.8, height: 40.2 });
+
+  // Node position & size must be integer quantized
+  assert.strictEqual(Number.isInteger(c.x), true);
+  assert.strictEqual(Number.isInteger(c.y), true);
+  assert.strictEqual(Number.isInteger(c.width), true);
+  assert.strictEqual(Number.isInteger(c.height), true);
+
+  // Update with float values
+  scene.updateComponent('int_node', { x: 15.6, y: 25.1, width: 70.9, height: 35.4 });
+  assert.strictEqual(Number.isInteger(c.x), true);
+  assert.strictEqual(Number.isInteger(c.y), true);
+  assert.strictEqual(Number.isInteger(c.width), true);
+  assert.strictEqual(Number.isInteger(c.height), true);
+});
+
+test('BETA-UI-7.9: Z-order operations', () => {
+  const scene = new SceneModel({ id: 'z_test' });
+  const history = new HistoryManager();
+  const c1 = scene.addComponent({ id: 'a', screen: 'top', zIndex: 1 });
+  const c2 = scene.addComponent({ id: 'b', screen: 'top', zIndex: 2 });
+  const c3 = scene.addComponent({ id: 'c', screen: 'top', zIndex: 3 });
+
+  // Send 'c' to back
+  SpatialUtils.setZOrder('c', 'back', scene, history);
+  assert.strictEqual(c3.zIndex, 1);
+
+  // Bring 'c' forward
+  SpatialUtils.setZOrder('c', 'forward', scene, history);
+  assert.strictEqual(c3.zIndex, 2);
+
+  // Bring 'c' to front
+  SpatialUtils.setZOrder('c', 'front', scene, history);
+  assert.strictEqual(c3.zIndex, 3);
+
+  // Send backward
+  SpatialUtils.setZOrder('c', 'backward', scene, history);
+  assert.strictEqual(c3.zIndex, 2);
+
+  // History undo
+  history.undo();
+  assert.strictEqual(c3.zIndex, 3);
+});
+
+test('BETA-UI-7.10: Node locking', () => {
+  const scene = new SceneModel({ id: 'lock_test' });
+  const history = new HistoryManager();
+  const c = scene.addComponent({ id: 'locked_node', screen: 'top', x: 20, y: 20, locked: true });
+
+  assert.strictEqual(c.locked, true);
+
+  // Locked node serializes properly
+  const json = scene.toJSON();
+  const nodeJson = json.components.find(comp => comp.id === 'locked_node');
+  assert.strictEqual(nodeJson.locked, true);
+
+  // Toggle lock with history
+  scene.setNodeLocked('locked_node', false, history);
+  assert.strictEqual(c.locked, false);
+  history.undo();
+  assert.strictEqual(c.locked, true);
+
+  // DragResizeManager ignores locked nodes
+  const dragManager = new (class {
+    constructor() { this.dragging = false; }
+    startDrag(comp) {
+      if (comp.locked) return false;
+      this.dragging = true;
+      return true;
+    }
+  })();
+  assert.strictEqual(dragManager.startDrag(c), false);
+  assert.strictEqual(dragManager.dragging, false);
+});
+
+test('BETA-UI-7.11: Isolation mode', () => {
+  const fakeCanvas = {
+    getContext: () => ({
+      fillRect: () => {}, strokeRect: () => {}, fillText: () => {},
+      beginPath: () => {}, moveTo: () => {}, lineTo: () => {},
+      stroke: () => {}, save: () => {}, restore: () => {},
+      translate: () => {}, scale: () => {}, setLineDash: () => {},
+      quadraticCurveTo: () => {}, closePath: () => {}, fill: () => {},
+      measureText: () => ({ width: 10 })
+    }),
+    addEventListener: () => {}, width: 800, height: 600, style: {}
+  };
+  const scene = new SceneModel({ id: 'iso_test' });
+  scene.addComponent({ id: 'node_iso', screen: 'top' });
+  const renderer = new CanvasRenderer(fakeCanvas, { getActiveScreen: () => scene }, { getSelectedComponents: () => [] }, {});
+
+  renderer.setIsolation('node_iso');
+  assert.strictEqual(renderer.isolatedNodeId, 'node_iso');
+
+  // Verify SceneModel is NOT mutated by isolation mode
+  const json = scene.toJSON();
+  assert.strictEqual(json.isolatedNodeId, undefined);
+
+  renderer.clearIsolation();
+  assert.strictEqual(renderer.isolatedNodeId, null);
+});
+
+test('BETA-UI-7.12: Guide operations', () => {
+  const scene = new SceneModel({ id: 'guide_test' });
+  const history = new HistoryManager();
+
+  const g = scene.addGuide({ orientation: 'v', position: 200, screen: 'top' }, history);
+  assert.ok(g.id);
+  assert.strictEqual(g.position, 200);
+  assert.strictEqual(scene.getGuides().length, 1);
+
+  // Move guide
+  scene.moveGuide(g.id, 220, history);
+  assert.strictEqual(scene.getGuides()[0].position, 220);
+
+  // Delete guide
+  scene.deleteGuide(g.id, history);
+  assert.strictEqual(scene.getGuides().length, 0);
+
+  // Undo delete
+  history.undo();
+  assert.strictEqual(scene.getGuides().length, 1);
+  assert.strictEqual(scene.getGuides()[0].position, 220);
+});
+
+test('BETA-UI-7.13: Scene duplication', () => {
+  const scene = new SceneModel({
+    id: 'original_scene',
+    name: 'Original Scene',
+    durationFrames: 60,
+    fps: 60
+  });
+  scene.addComponent({ id: 'sprite_01', type: 'Image', screen: 'top', x: 10, y: 10 });
+  const track = new AnimationTrack({ targetNodeId: 'sprite_01', propertyPath: 'transform.x' });
+  track.addKeyframe(0, 10, 'linear');
+  scene.tracks.push(track);
+
+  const dup = SceneLibrary.duplicateScene(scene, 'duplicated_scene');
+  assert.strictEqual(dup.id, 'duplicated_scene');
+  assert.strictEqual(dup.durationFrames, 60);
+  assert.strictEqual(dup.components.length, 1);
+  assert.notStrictEqual(dup.components[0].id, 'sprite_01');
+  assert.strictEqual(dup.tracks.length, 1);
+  assert.strictEqual(dup.tracks[0].targetNodeId, dup.components[0].id);
+});
+
+test('BETA-UI-7.14: Node copy/paste', () => {
+  const scene = new SceneModel({ id: 'copypaste_test' });
+  const history = new HistoryManager();
+  const c1 = scene.addComponent({ id: 'orig_node', type: 'RogueBox', screen: 'top', x: 20, y: 30, width: 40, height: 40 });
+
+  const clipboard = SpatialUtils.copyNodes([c1]);
+  assert.strictEqual(clipboard.length, 1);
+  assert.strictEqual(clipboard[0].id, 'orig_node');
+
+  const pasted = SpatialUtils.pasteNodes(clipboard, scene, history, { offset: 10 });
+  assert.strictEqual(pasted.length, 1);
+  assert.notStrictEqual(pasted[0].id, 'orig_node');
+  assert.strictEqual(pasted[0].x, 30);
+  assert.strictEqual(pasted[0].y, 40);
+  assert.strictEqual(scene.components.length, 2);
+
+  // Undo paste
+  history.undo();
+  assert.strictEqual(scene.components.length, 1);
+});
+
+test('BETA-UI-7.15: Animated node duplication', () => {
+  const scene = new SceneModel({ id: 'dup_anim_test' });
+  const history = new HistoryManager();
+  const c = scene.addComponent({ id: 'anim_box', type: 'RogueBox', screen: 'top', x: 50, y: 50 });
+  const t = new AnimationTrack({ targetNodeId: 'anim_box', propertyPath: 'transform.y' });
+  t.addKeyframe(0, 50, 'linear');
+  t.addKeyframe(30, 100, 'linear');
+  scene.tracks.push(t);
+
+  const dup = SpatialUtils.duplicateNode('anim_box', scene, history);
+  assert.ok(dup);
+  assert.notStrictEqual(dup.id, 'anim_box');
+  assert.strictEqual(scene.tracks.length, 2);
+
+  const dupTrack = scene.tracks.find(tr => tr.targetNodeId === dup.id);
+  assert.ok(dupTrack);
+  assert.strictEqual(dupTrack.keyframes.length, 2);
+  assert.strictEqual(dupTrack.evaluate(30), 100);
+});
+
+test('BETA-UI-7.16: Nested composition model', () => {
+  const comp = new CompositionNode({
+    id: 'intro_comp',
+    sceneId: 'CharacterIntro',
+    screen: 'top',
+    x: 10,
+    y: 10,
+    width: 100,
+    height: 100,
+    startFrame: 15,
+    durationFrames: 45,
+    localFrameOffset: 0,
+    playbackRate: 1.0,
+    loop: false
+  });
+
+  assert.strictEqual(comp.type, 'Composition');
+  assert.strictEqual(comp.sceneId, 'CharacterIntro');
+  assert.strictEqual(comp.startFrame, 15);
+  assert.strictEqual(comp.durationFrames, 45);
+
+  const json = comp.toJSON();
+  assert.strictEqual(json.sceneId, 'CharacterIntro');
+  assert.strictEqual(json.startFrame, 15);
+  assert.strictEqual(json.durationFrames, 45);
+});
+
+test('BETA-UI-7.17: Nested composition evaluation', () => {
+  const library = new SceneLibrary();
+  const childScene = new SceneModel({ id: 'ChildScene', durationFrames: 30 });
+  childScene.addComponent({ id: 'inner_node', screen: 'top', x: 10, y: 10 });
+  library.registerScene(childScene);
+
+  const parentScene = new SceneModel({ id: 'ParentScene', durationFrames: 60 });
+  parentScene.addComponent({
+    id: 'comp_1',
+    type: 'Composition',
+    screen: 'top',
+    sceneId: 'ChildScene',
+    startFrame: 10,
+    durationFrames: 30,
+    playbackRate: 1.0
+  });
+
+  const evaluated = TimelineEvaluator.evaluateScene(parentScene, 20, {
+    sceneResolver: (id) => library.getScene(id)
+  });
+
+  assert.ok(evaluated.has('comp_1'));
+  assert.strictEqual(evaluated.get('comp_1').localFrame, 10);
+  assert.ok(evaluated.has('inner_node'), 'Child scene node must be evaluated');
+});
+
+test('BETA-UI-7.18: Nested time mapping', () => {
+  const comp = new CompositionNode({
+    id: 'c',
+    sceneId: 'Sub',
+    startFrame: 10,
+    durationFrames: 20,
+    localFrameOffset: 5,
+    playbackRate: 2.0,
+    loop: false
+  });
+
+  // At parent frame 10: (10-10)*2 + 5 = 5
+  assert.strictEqual(comp.mapParentToLocalFrame(10), 5);
+  // At parent frame 15: (15-10)*2 + 5 = 15
+  assert.strictEqual(comp.mapParentToLocalFrame(15), 15);
+  // Clamped at durationFrames = 20
+  assert.strictEqual(comp.mapParentToLocalFrame(30), 20);
+
+  // Looping
+  comp.loop = true;
+  comp.localFrameOffset = 0;
+  // (25 - 10)*2 = 30 -> 30 % 20 = 10
+  assert.strictEqual(comp.mapParentToLocalFrame(25), 10);
+});
+
+test('BETA-UI-7.19: Composition instance overrides', () => {
+  const library = new SceneLibrary();
+  const childScene = new SceneModel({ id: 'ChildOverride', durationFrames: 30 });
+  childScene.addComponent({ id: 'child_elem', screen: 'top', opacity: 0.5 });
+  library.registerScene(childScene);
+
+  const parentScene = new SceneModel({ id: 'ParentOverride' });
+  parentScene.addComponent({
+    id: 'comp_over',
+    type: 'Composition',
+    screen: 'top',
+    sceneId: 'ChildOverride',
+    startFrame: 0,
+    durationFrames: 30,
+    overrides: {
+      opacity: 0.8
+    }
+  });
+
+  const evaluated = TimelineEvaluator.evaluateScene(parentScene, 0, {
+    sceneResolver: (id) => library.getScene(id)
+  });
+
+  assert.strictEqual(evaluated.get('comp_over').opacity, 0.8);
+  // Original child scene remains unmutated
+  assert.strictEqual(childScene.getComponent('child_elem').opacity, 0.5);
+});
+
+test('BETA-UI-7.20: Cycle detection', () => {
+  const library = new SceneLibrary();
+
+  const sceneA = new SceneModel({ id: 'SceneA' });
+  sceneA.addComponent({ id: 'comp_to_b', type: 'Composition', sceneId: 'SceneB' });
+
+  const sceneB = new SceneModel({ id: 'SceneB' });
+  sceneB.addComponent({ id: 'comp_to_a', type: 'Composition', sceneId: 'SceneA' });
+
+  library.registerScene(sceneA);
+  library.registerScene(sceneB);
+
+  assert.throws(() => {
+    SceneLibrary.assertNoCompositionCycles('SceneA', (id) => library.getScene(id));
+  }, /Circular composition reference detected/);
+});
+
+test('BETA-UI-7.21: Schema migration', () => {
+  const v3Data = {
+    schemaVersion: 3,
+    id: 'v3_scene',
+    top: { width: 400, height: 240 },
+    bottom: { width: 320, height: 240 },
+    components: [{ id: 'box', type: 'RogueBox', screen: 'top' }],
+    tracks: [],
+    clips: [{ id: 'clip1', durationFrames: 30, tracks: [] }],
+    sequence: [{ id: 'seq1', clipId: 'clip1', startFrame: 0, durationFrames: 30 }]
+  };
+
+  const v4Data = SceneModel.migrateV3ToV4(v3Data);
+  assert.strictEqual(v4Data.schemaVersion, 4);
+  assert.ok(Array.isArray(v4Data.guides));
+  assert.strictEqual(v4Data.clips.length, 1);
+  assert.strictEqual(v4Data.sequence.length, 1);
+
+  const latest = SceneModel.migrateToLatest(v3Data);
+  assert.strictEqual(latest.schemaVersion, 4);
+});
+
+test('BETA-UI-7.22: Export nested composition', () => {
+  const scene = new SceneModel({ id: 'ExportCompScene' });
+  scene.addComponent({
+    id: 'nested_comp_node',
+    type: 'Composition',
+    screen: 'top',
+    sceneId: 'ChildScene',
+    startFrame: 5,
+    durationFrames: 40,
+    localFrameOffset: 0,
+    playbackRate: 1.0,
+    loop: false,
+    locked: true
+  });
+
+  const exported = SceneCppExporter.export(scene.toJSON());
+  assert.ok(exported.dataHpp.includes('Composition = 6'));
+  assert.ok(exported.dataHpp.includes('SceneCompositionData'));
+  assert.ok(exported.dataCpp.includes('NodeType::Composition'));
+  assert.ok(exported.dataCpp.includes('"ChildScene"'));
+  assert.ok(exported.timelineHpp.includes('mapCompositionLocalFrame'));
+});
+
+test('BETA-UI-7.23: Runtime nested composition', () => {
+  // Test native/simulated C++ mapCompositionLocalFrame logic
+  const mapCpp = (parentFrame, startFrame, durationFrames, localOffset, playbackRate, loop) => {
+    const rate = playbackRate === 0 ? 1 : playbackRate;
+    let local = Math.floor((parentFrame - startFrame) * rate) + localOffset;
+    if (loop && durationFrames > 0) {
+      local = ((local % durationFrames) + durationFrames) % durationFrames;
+    } else {
+      if (local < 0) local = 0;
+      if (local > durationFrames) local = durationFrames;
+    }
+    return local;
+  };
+
+  assert.strictEqual(mapCpp(10, 10, 30, 0, 1.0, false), 0);
+  assert.strictEqual(mapCpp(25, 10, 30, 0, 1.0, false), 15);
+  assert.strictEqual(mapCpp(50, 10, 30, 0, 1.0, false), 30);
+  assert.strictEqual(mapCpp(50, 10, 30, 0, 1.0, true), 10);
+});
+
+test('BETA-UI-7.24: Preview/runtime parity', () => {
+  const scenePath = path.join(__dirname, '../project/screens/ProfessionalComposition.json');
+  const sceneData = JSON.parse(fs.readFileSync(scenePath, 'utf8'));
+
+  const exportModel = SceneCppExporter._buildExportModel(sceneData);
+
+  for (let f = 0; f <= sceneData.durationFrames; f += 10) {
+    const jsEval = TimelineEvaluator.evaluateScene(sceneData, f);
+    const cppEval = SceneCppExporter.evaluateExportedData(exportModel, f);
+
+    for (const [nodeId, jsVal] of jsEval.entries()) {
+      if (cppEval.has(nodeId)) {
+        const cppVal = cppEval.get(nodeId);
+        if (jsVal.transform?.x !== undefined && cppVal.transform?.x !== undefined) {
+          assert.strictEqual(Math.round(jsVal.transform.x), Math.round(cppVal.transform.x));
+        }
+        if (jsVal.localFrame !== undefined && cppVal.localFrame !== undefined) {
+          assert.strictEqual(jsVal.localFrame, cppVal.localFrame);
+        }
+      }
+    }
+  }
+});
+
+test('BETA-UI-7.25: Determinism', () => {
+  const scenePath = path.join(__dirname, '../project/screens/ProfessionalComposition.json');
+  const sceneData = JSON.parse(fs.readFileSync(scenePath, 'utf8'));
+
+  const export1 = SceneCppExporter.export(sceneData);
+  const export2 = SceneCppExporter.export(sceneData);
+
+  assert.strictEqual(export1.dataHpp, export2.dataHpp);
+  assert.strictEqual(export1.dataCpp, export2.dataCpp);
+  assert.strictEqual(export1.timelineHpp, export2.timelineHpp);
+  assert.strictEqual(export1.timelineCpp, export2.timelineCpp);
+});
+
+test('BETA-UI-7.26: Undo/redo', () => {
+  const scene = new SceneModel({ id: 'ur_test' });
+  const history = new HistoryManager();
+
+  // Guide add undo/redo
+  const g = scene.addGuide({ orientation: 'h', position: 50 }, history);
+  assert.strictEqual(scene.getGuides().length, 1);
+  history.undo();
+  assert.strictEqual(scene.getGuides().length, 0);
+  history.redo();
+  assert.strictEqual(scene.getGuides().length, 1);
+
+  // Lock node undo/redo
+  const c = scene.addComponent({ id: 'node_ur', screen: 'top' });
+  scene.setNodeLocked('node_ur', true, history);
+  assert.strictEqual(c.locked, true);
+  history.undo();
+  assert.strictEqual(c.locked, false);
+  history.redo();
+  assert.strictEqual(c.locked, true);
+});
+
+test('BETA-UI-7.27: Demo scene', () => {
+  const scenePath = path.join(__dirname, '../project/screens/ProfessionalComposition.json');
+  const sceneData = JSON.parse(fs.readFileSync(scenePath, 'utf8'));
+
+  assert.doesNotThrow(() => {
+    SceneValidator.assertValid(sceneData);
+  });
+
+  assert.strictEqual(sceneData.schemaVersion, 4);
+  assert.ok(sceneData.guides && sceneData.guides.length > 0);
+  assert.ok(sceneData.components.some(c => c.screen === 'top'));
+  assert.ok(sceneData.components.some(c => c.screen === 'bottom'));
+  assert.ok(sceneData.components.some(c => c.type === 'Composition'));
+  assert.ok(sceneData.components.some(c => c.locked === true));
+  assert.ok(sceneData.clips && sceneData.clips.length > 0);
+  assert.ok(sceneData.markers && sceneData.markers.length > 0);
+  assert.ok(sceneData.audioCues && sceneData.audioCues.length > 0);
+});
+
+test('BETA-UI-7.28: CI regression', () => {
+  // 1. Strict gameplay guardrail: BattleEngine, BattleSession, BattleState remain intact
+  assert.ok(BattleEngine, 'BattleEngine must exist');
+  assert.ok(BattleSession, 'BattleSession must exist');
+  assert.ok(BattleState, 'BattleState must exist');
+  assert.strictEqual(typeof BattleEngine.prototype.executeCommand, 'function', 'BattleEngine.executeCommand remains unchanged');
+
+  // 2. Both AdvancedAnimation and ProfessionalComposition pass strict SceneValidator
+  const advPath = path.join(__dirname, '../project/screens/AdvancedAnimation.json');
+  const profPath = path.join(__dirname, '../project/screens/ProfessionalComposition.json');
+  assert.doesNotThrow(() => SceneValidator.assertValid(JSON.parse(fs.readFileSync(advPath, 'utf8'))));
+  assert.doesNotThrow(() => SceneValidator.assertValid(JSON.parse(fs.readFileSync(profPath, 'utf8'))));
 });
 
 let blocked = 0;

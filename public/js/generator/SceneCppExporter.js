@@ -55,7 +55,9 @@ export class SceneCppExporter {
     'MoveButton': 4,
     'Button': 4,
     'Group': 5,
-    'GroupNode': 5
+    'GroupNode': 5,
+    'Composition': 6,
+    'CompositionNode': 6
   };
 
   /**
@@ -307,6 +309,7 @@ export class SceneCppExporter {
    * @param {Object} assetManifest 
    */
   static _buildExportModel(scene, assetManifest) {
+    const manifest = assetManifest || this._buildAssetManifest(scene);
     const rawNodes = [...(scene.nodes || scene.components || [])];
 
     // Sort nodes deterministically: screen (top, bottom, global), then zIndex, then id
@@ -340,6 +343,18 @@ export class SceneCppExporter {
       const tint = n.properties?.tint || n.properties?.backgroundColor || '#ffffff';
       const text = n.properties?.text || n.properties?.label || '';
 
+      let compData = null;
+      if (n.type === 'Composition' || n.type === 'CompositionNode') {
+        compData = {
+          sceneId: n.sceneId || n.properties?.sceneId || '',
+          startFrame: Number(n.startFrame || 0),
+          durationFrames: Number(n.durationFrames || 0),
+          localFrameOffset: Number(n.localFrameOffset || 0),
+          playbackRate: Number(n.playbackRate ?? 1.0),
+          loop: Boolean(n.loop)
+        };
+      }
+
       return {
         index: idx,
         id: n.id,
@@ -364,7 +379,9 @@ export class SceneCppExporter {
         flipX: Boolean(n.properties?.flipX),
         flipY: Boolean(n.properties?.flipY),
         tintColor: this.hexColorToCitro2D(tint),
-        text
+        text,
+        locked: Boolean(n.locked),
+        composition: compData
       };
     });
 
@@ -533,7 +550,7 @@ export class SceneCppExporter {
       sequence,
       markers,
       audioCues,
-      assets: assetManifest.assets
+      assets: manifest ? manifest.assets : []
     };
   }
 
@@ -581,7 +598,8 @@ enum class NodeType : uint8_t {
     Text = 2,
     Panel = 3,
     Button = 4,
-    Group = 5
+    Group = 5,
+    Composition = 6
 };
 
 struct SceneKeyframe {
@@ -642,6 +660,15 @@ struct SceneAudioCue {
     uint8_t channel;
 };
 
+struct SceneCompositionData {
+    const char* sceneId;
+    int32_t startFrame;
+    uint16_t durationFrames;
+    int32_t localFrameOffset;
+    float playbackRate;
+    bool loop;
+};
+
 struct SceneNodeData {
     uint32_t idHash;
     const char* id;
@@ -665,6 +692,9 @@ struct SceneNodeData {
     bool flipY;
     uint32_t tintColor;
     const char* text;
+    // BETA-UI-7: Production UX & Composition
+    bool locked;
+    SceneCompositionData composition;
 };
 
 struct SceneDefinition {
@@ -757,7 +787,8 @@ extern const SceneDefinition g_SceneDefinition;
       for (const node of model.nodes) {
         const hexHash = `0x${node.idHash.toString(16).toUpperCase().padStart(8, '0')}`;
         const screenEnum = node.screen === 'bottom' ? 'ScreenTarget::Bottom' : (node.screen === 'global' ? 'ScreenTarget::Global' : 'ScreenTarget::Top');
-        const typeEnum = `NodeType::${['Image', 'PokemonSprite', 'Text', 'Panel', 'Button', 'Group'][node.typeCode] || 'Image'}`;
+        const typeNames = ['Image', 'PokemonSprite', 'Text', 'Panel', 'Button', 'Group', 'Composition'];
+        const typeEnum = `NodeType::${typeNames[node.typeCode] || 'Image'}`;
         const assetStr = node.asset ? `"${this.escapeCppString(node.asset)}"` : 'nullptr';
         const textStr = node.text ? `"${this.escapeCppString(node.text)}"` : 'nullptr';
 
@@ -767,7 +798,13 @@ extern const SceneDefinition g_SceneDefinition;
         lines.push(`        ${this.formatFloat(node.scaleX)}, ${this.formatFloat(node.scaleY)}, ${this.formatFloat(node.rotation)}, ${this.formatFloat(node.opacity)},`);
         lines.push(`        ${node.visible ? 'true' : 'false'}, ${node.zIndex},`);
         lines.push(`        ${assetStr}, ${node.flipX ? 'true' : 'false'}, ${node.flipY ? 'true' : 'false'},`);
-        lines.push(`        ${node.tintColor}, ${textStr}`);
+        lines.push(`        ${node.tintColor}, ${textStr},`);
+        lines.push(`        ${node.locked ? 'true' : 'false'},`);
+        if (node.composition && node.composition.sceneId) {
+          lines.push(`        { "${this.escapeCppString(node.composition.sceneId)}", ${node.composition.startFrame}, ${node.composition.durationFrames}, ${node.composition.localFrameOffset}, ${this.formatFloat(node.composition.playbackRate)}, ${node.composition.loop ? 'true' : 'false'} }`);
+        } else {
+          lines.push('        { nullptr, 0, 0, 0, 1.0f, false }');
+        }
         lines.push('    },');
       }
       lines.push('};');
@@ -1037,6 +1074,8 @@ public:
     static float evaluateProgress(float t, InterpolationType type, float cp1x = 0.25f, float cp1y = 0.1f, float cp2x = 0.25f, float cp2y = 1.0f);
     static float evaluateTrack(const SceneTrack& track, uint32_t frame, float defaultValue);
     static float evaluateClipTrack(const SceneClipTrack& track, uint32_t frame, float defaultValue);
+    // BETA-UI-7: Nested composition time mapping
+    static int32_t mapCompositionLocalFrame(int32_t parentFrame, int32_t startFrame, uint16_t durationFrames, int32_t localOffset, float playbackRate, bool loop);
 
     // Node evaluation (local overrides at frame)
     void evaluateNodeLocal(uint32_t nodeIndex, uint32_t frame, EvaluatedTransform& outTransform, bool& outVisible) const;
@@ -1301,6 +1340,18 @@ float SceneTimeline::evaluateClipTrack(const SceneClipTrack& track, uint32_t fra
     }
 
     return last.value;
+}
+
+int32_t SceneTimeline::mapCompositionLocalFrame(int32_t parentFrame, int32_t startFrame, uint16_t durationFrames, int32_t localOffset, float playbackRate, bool loop) {
+    const float rate = (playbackRate == 0.0f) ? 1.0f : playbackRate;
+    int32_t local = static_cast<int32_t>(floor((parentFrame - startFrame) * rate)) + localOffset;
+    if (loop && durationFrames > 0) {
+        local = ((local % static_cast<int32_t>(durationFrames)) + static_cast<int32_t>(durationFrames)) % static_cast<int32_t>(durationFrames);
+    } else {
+        if (local < 0) local = 0;
+        if (local > static_cast<int32_t>(durationFrames)) local = static_cast<int32_t>(durationFrames);
+    }
+    return local;
 }
 
 void SceneTimeline::evaluateNodeLocal(uint32_t nodeIndex, uint32_t frame, EvaluatedTransform& outTransform, bool& outVisible) const {
@@ -1801,6 +1852,31 @@ Screen* createScene() {
         const evaluatedVal = evalTrack(track, intFrame);
         if (evaluatedVal === null || evaluatedVal === undefined) continue;
         applyValue(track.targetNodeId, track.propertyId, evaluatedVal);
+      }
+    }
+
+    // 3. BETA-UI-7: Evaluate nested composition local frames
+    if (Array.isArray(exportModel.nodes)) {
+      for (const node of exportModel.nodes) {
+        if (node.composition && node.composition.sceneId) {
+          const comp = node.composition;
+          const rate = comp.playbackRate ?? 1.0;
+          let local = Math.floor((intFrame - (comp.startFrame || 0)) * rate) + (comp.localFrameOffset || 0);
+          const dur = comp.durationFrames || 60;
+          if (comp.loop && dur > 0) {
+            local = ((local % dur) + dur) % dur;
+          } else {
+            local = Math.max(0, Math.min(dur, local));
+          }
+          if (!evaluatedMap.has(node.id)) {
+            evaluatedMap.set(node.id, {
+              transform: {},
+              visible: undefined,
+              opacity: undefined
+            });
+          }
+          evaluatedMap.get(node.id).localFrame = local;
+        }
       }
     }
 

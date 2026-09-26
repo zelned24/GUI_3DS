@@ -240,6 +240,18 @@ float SceneTimeline::evaluateClipTrack(const SceneClipTrack& track, uint32_t fra
     return last.value;
 }
 
+int32_t SceneTimeline::mapCompositionLocalFrame(int32_t parentFrame, int32_t startFrame, uint16_t durationFrames, int32_t localOffset, float playbackRate, bool loop) {
+    const float rate = (playbackRate == 0.0f) ? 1.0f : playbackRate;
+    int32_t local = static_cast<int32_t>(floor((parentFrame - startFrame) * rate)) + localOffset;
+    if (loop && durationFrames > 0) {
+        local = ((local % static_cast<int32_t>(durationFrames)) + static_cast<int32_t>(durationFrames)) % static_cast<int32_t>(durationFrames);
+    } else {
+        if (local < 0) local = 0;
+        if (local > static_cast<int32_t>(durationFrames)) local = static_cast<int32_t>(durationFrames);
+    }
+    return local;
+}
+
 void SceneTimeline::evaluateNodeLocal(uint32_t nodeIndex, uint32_t frame, EvaluatedTransform& outTransform, bool& outVisible) const {
     if (nodeIndex >= m_scene.nodeCount || m_scene.nodes == nullptr) return;
 

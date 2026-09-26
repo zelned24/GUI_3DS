@@ -1,0 +1,272 @@
+{
+  "schemaVersion": 4,
+  "id": "ProfessionalComposition",
+  "name": "Professional Composition Demo",
+  "fps": 60,
+  "durationFrames": 90,
+  "currentFrame": 0,
+  "top": {
+    "width": 400,
+    "height": 240,
+    "backgroundColor": "#12141c"
+  },
+  "bottom": {
+    "width": 320,
+    "height": 240,
+    "backgroundColor": "#1a1824"
+  },
+  "guides": [
+    { "id": "guide_center_x", "orientation": "v", "position": 200, "screen": "top" },
+    { "id": "guide_center_y", "orientation": "h", "position": 120, "screen": "top" },
+    { "id": "guide_safe_top", "orientation": "h", "position": 16, "screen": "all" },
+    { "id": "guide_bottom_center", "orientation": "v", "position": 160, "screen": "bottom" }
+  ],
+  "components": [
+    {
+      "id": "bg_arena",
+      "type": "Image",
+      "screen": "top",
+      "x": 0,
+      "y": 0,
+      "width": 400,
+      "height": 240,
+      "visible": true,
+      "enabled": true,
+      "locked": false,
+      "zIndex": 1,
+      "parent": null,
+      "properties": {
+        "asset": "bg_arena_plains",
+        "fit": "stretch"
+      }
+    },
+    {
+      "id": "header_group",
+      "type": "Group",
+      "screen": "top",
+      "x": 20,
+      "y": 16,
+      "width": 360,
+      "height": 48,
+      "visible": true,
+      "enabled": true,
+      "locked": false,
+      "zIndex": 3,
+      "parent": null,
+      "children": ["title_banner", "subtitle_banner"],
+      "properties": {}
+    },
+    {
+      "id": "title_banner",
+      "type": "PixelText",
+      "screen": "top",
+      "x": 20,
+      "y": 16,
+      "width": 360,
+      "height": 28,
+      "visible": true,
+      "enabled": true,
+      "locked": false,
+      "zIndex": 4,
+      "parent": "header_group",
+      "properties": {
+        "text": "PROFESSIONAL COMPOSITION",
+        "fontSize": 14,
+        "color": "#38bdf8",
+        "align": "center"
+      }
+    },
+    {
+      "id": "subtitle_banner",
+      "type": "PixelText",
+      "screen": "top",
+      "x": 20,
+      "y": 44,
+      "width": 360,
+      "height": 20,
+      "visible": true,
+      "enabled": true,
+      "locked": false,
+      "zIndex": 5,
+      "parent": "header_group",
+      "properties": {
+        "text": "3DS Dual Screen & Nested Compositions",
+        "fontSize": 10,
+        "color": "#94a3b8",
+        "align": "center"
+      }
+    },
+    {
+      "id": "char_intro_comp",
+      "type": "Composition",
+      "screen": "top",
+      "x": 40,
+      "y": 70,
+      "width": 128,
+      "height": 128,
+      "visible": true,
+      "enabled": true,
+      "locked": false,
+      "zIndex": 2,
+      "parent": null,
+      "sceneId": "PokemonEntrance",
+      "startFrame": 0,
+      "durationFrames": 60,
+      "localFrameOffset": 0,
+      "playbackRate": 1.0,
+      "loop": true,
+      "overrides": {
+        "opacity": 1.0,
+        "visible": true
+      },
+      "properties": {}
+    },
+    {
+      "id": "pikachu_sprite",
+      "type": "PokemonSprite",
+      "screen": "top",
+      "x": 240,
+      "y": 70,
+      "width": 112,
+      "height": 112,
+      "visible": true,
+      "enabled": true,
+      "locked": true,
+      "zIndex": 2,
+      "parent": null,
+      "properties": {
+        "species": "Pikachu",
+        "nationalDexId": 25,
+        "facing": "front",
+        "shiny": false
+      },
+      "opacity": 1
+    },
+    {
+      "id": "touch_panel",
+      "type": "RogueBox",
+      "screen": "bottom",
+      "x": 16,
+      "y": 16,
+      "width": 288,
+      "height": 208,
+      "visible": true,
+      "enabled": true,
+      "locked": false,
+      "zIndex": 1,
+      "parent": null,
+      "children": ["touch_button", "status_label"],
+      "properties": {
+        "backgroundColor": "#1e2433"
+      }
+    },
+    {
+      "id": "touch_button",
+      "type": "TouchButton",
+      "screen": "bottom",
+      "x": 44,
+      "y": 80,
+      "width": 232,
+      "height": 50,
+      "visible": true,
+      "enabled": true,
+      "locked": false,
+      "zIndex": 2,
+      "parent": "touch_panel",
+      "properties": {
+        "label": "TOUCH TO ACTIVATE",
+        "backgroundColor": "#0284c7"
+      }
+    },
+    {
+      "id": "status_label",
+      "type": "PixelText",
+      "screen": "bottom",
+      "x": 44,
+      "y": 150,
+      "width": 232,
+      "height": 24,
+      "visible": true,
+      "enabled": true,
+      "locked": false,
+      "zIndex": 3,
+      "parent": "touch_panel",
+      "properties": {
+        "text": "Bottom Safe Area: Title Safe (16px)",
+        "fontSize": 9,
+        "color": "#f59e0b",
+        "align": "center"
+      }
+    }
+  ],
+  "tracks": [
+    {
+      "id": "track_title_y",
+      "targetNodeId": "header_group",
+      "propertyPath": "transform.y",
+      "displayName": "header_group.Position Y",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 0, "value": -50, "interpolation": "bezier", "curve": { "mode": "bezier", "cp1": [0.25, 0.1], "cp2": [0.25, 1.0] } },
+        { "frame": 20, "value": 16, "interpolation": "linear" }
+      ]
+    },
+    {
+      "id": "track_btn_scale",
+      "targetNodeId": "touch_button",
+      "propertyPath": "transform.scaleX",
+      "displayName": "touch_button.Scale X",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 30, "value": 0.8, "interpolation": "bezier", "curve": { "mode": "bezier", "cp1": [0.34, 1.56], "cp2": [0.64, 1.0] } },
+        { "frame": 50, "value": 1.0, "interpolation": "linear" }
+      ]
+    }
+  ],
+  "clips": [
+    {
+      "id": "clip_fade_in",
+      "name": "Fade In",
+      "durationFrames": 30,
+      "tracks": [
+        {
+          "id": "ct_opacity",
+          "targetNodeId": "__target__",
+          "propertyPath": "opacity",
+          "displayName": "Opacity",
+          "valueType": "number",
+          "muted": false,
+          "solo": false,
+          "keyframes": [
+            { "frame": 0, "value": 0, "interpolation": "linear" },
+            { "frame": 30, "value": 1, "interpolation": "linear" }
+          ]
+        }
+      ]
+    }
+  ],
+  "sequence": [
+    {
+      "id": "seq_item_char_intro",
+      "clipId": "clip_fade_in",
+      "targetNodeId": "char_intro_comp",
+      "startFrame": 0,
+      "durationFrames": 30,
+      "clipStartOffset": 0,
+      "loopCount": 1,
+      "muted": false
+    }
+  ],
+  "markers": [
+    { "frame": 0, "name": "Start", "type": "Event" },
+    { "frame": 20, "name": "HeaderLanded", "type": "Event" },
+    { "frame": 40, "name": "AudioCueChime", "type": "Audio" }
+  ],
+  "audioCues": [
+    { "frame": 40, "asset": "audio_se_select", "volume": 0.85, "channel": 0 }
+  ]
+}

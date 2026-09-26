@@ -31,11 +31,12 @@ export class UINode {
           pivotX: data.transform?.pivotX ?? 0.0,
           pivotY: data.transform?.pivotY ?? 0.0,
           rotation: data.transform?.rotation ?? 0.0,
-          opacity: data.transform?.opacity ?? 1.0
+          opacity: data.opacity ?? data.transform?.opacity ?? 1.0
         });
 
     this.visible = data.visible !== false;
     this.enabled = data.enabled !== false;
+    this.locked = Boolean(data.locked);
     this.zIndex = Math.round(data.zIndex ?? 1);
     this.metadata = { ...(data.metadata || {}) };
 
@@ -225,6 +226,7 @@ export class UINode {
       height: this.height,
       visible: Boolean(this.visible),
       enabled: Boolean(this.enabled),
+      locked: Boolean(this.locked),
       zIndex: Math.round(this.zIndex),
       properties: { ...this.properties },
       metadata: { ...this.metadata }

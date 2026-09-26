@@ -2,6 +2,7 @@ import { InterpolationTypes } from '../animation/Keyframe.js';
 import { assetResolver } from '../data/AssetResolver.js';
 import { PokemonSpriteResolver } from '../data/PokemonSpriteResolver.js';
 import { AudioResolver } from '../data/AudioResolver.js';
+import { SceneLibrary } from '../core/SceneLibrary.js';
 
 /**
  * SceneValidator - Strict pre-export validation for GUI_3DS scenes.
@@ -328,4 +329,45 @@ export class SceneValidator {
     }
     return report;
   }
+
+  /**
+   * Asserts that a scene and its nested compositions contain no reference cycles.
+   * @param {string} rootSceneId 
+   * @param {Function} [sceneResolver]
+   */
+  static assertNoCompositionCycles(rootSceneId, sceneResolver = null) {
+    const resolver = sceneResolver || ((id) => SceneLibrary.getScene(id));
+
+    const visited = new Set();
+    const recursionStack = new Set();
+    const path = [];
+
+    const checkCycle = (currentId) => {
+      visited.add(currentId);
+      recursionStack.add(currentId);
+      path.push(currentId);
+
+      const scene = typeof resolver === 'function' ? resolver(currentId) : null;
+      if (scene) {
+        const nodes = scene.nodes || scene.components || [];
+        for (const node of nodes) {
+          const childSceneId = node.properties?.sceneId || node.sceneId;
+          if ((node.type === 'Composition' || node.type === 'CompositionNode') && childSceneId) {
+            if (!visited.has(childSceneId)) {
+              checkCycle(childSceneId);
+            } else if (recursionStack.has(childSceneId)) {
+              path.push(childSceneId);
+              throw new Error(`Circular composition reference detected: ${path.join(' -> ')}`);
+            }
+          }
+        }
+      }
+
+      path.pop();
+      recursionStack.delete(currentId);
+    };
+
+    checkCycle(rootSceneId);
+  }
 }
+

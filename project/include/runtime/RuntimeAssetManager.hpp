@@ -47,6 +47,8 @@ struct RuntimeMetrics {
     uint32_t evaluatedTracks;
     uint32_t curveEvaluations;
     uint32_t sequencerSegments;
+    // BETA-UI-7: Composition metrics
+    uint32_t nestedCompositions;
 };
 
 class RuntimeAssetManager {

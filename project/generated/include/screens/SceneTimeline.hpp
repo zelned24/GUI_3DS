@@ -43,6 +43,8 @@ public:
     static float evaluateProgress(float t, InterpolationType type, float cp1x = 0.25f, float cp1y = 0.1f, float cp2x = 0.25f, float cp2y = 1.0f);
     static float evaluateTrack(const SceneTrack& track, uint32_t frame, float defaultValue);
     static float evaluateClipTrack(const SceneClipTrack& track, uint32_t frame, float defaultValue);
+    // BETA-UI-7: Nested composition time mapping
+    static int32_t mapCompositionLocalFrame(int32_t parentFrame, int32_t startFrame, uint16_t durationFrames, int32_t localOffset, float playbackRate, bool loop);
 
     // Node evaluation (local overrides at frame)
     void evaluateNodeLocal(uint32_t nodeIndex, uint32_t frame, EvaluatedTransform& outTransform, bool& outVisible) const;

@@ -6,6 +6,7 @@ import { MoveButton } from './MoveButton.js';
 import { ImageNode } from './ImageNode.js';
 import { PokemonSpriteNode } from './PokemonSpriteNode.js';
 import { GroupNode } from './GroupNode.js';
+import { CompositionNode } from './CompositionNode.js';
 
 /**
  * ComponentRegistry - Registry for instantiating and describing 3DS UI components & nodes.
@@ -105,8 +106,17 @@ ComponentRegistry.register('HealthBar', HealthBar, {
 ComponentRegistry.register('MoveButton', MoveButton, {
   name: 'Move Button',
   category: 'PokéRogue Data Views',
-  icon: '⚡',
-  description: 'Battle command button bound to Pokémon move data'
+  icon: '⚔️',
+  description: 'Combat move slot displaying move name, type, and PP'
 });
+
+ComponentRegistry.register('Composition', CompositionNode, {
+  name: 'Composition',
+  category: 'Compositions',
+  icon: '🎞️',
+  description: 'Reusable nested scene composition instance with local timeline'
+});
+ComponentRegistry.register('CompositionNode', CompositionNode);
+
 
 

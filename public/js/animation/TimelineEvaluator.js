@@ -1,6 +1,7 @@
 import { Transform } from '../core/Transform.js';
 import { AnimationTrack } from './AnimationTrack.js';
 import { AnimationClip } from './AnimationClip.js';
+import { SceneLibrary } from '../core/SceneLibrary.js';
 
 /**
  * TimelineEvaluator - Evaluates animation tracks for a given frame without mutating document state.
@@ -23,9 +24,11 @@ export class TimelineEvaluator {
    * 
    * @param {SceneModel} scene 
    * @param {number} frame 
+   * @param {Object} [options]
+   * @param {Function} [options.sceneResolver]
    * @returns {Map<string, Object>} Map of nodeId -> evaluated state overrides
    */
-  static evaluateScene(scene, frame) {
+  static evaluateScene(scene, frame, options = {}) {
     const evaluatedMap = new Map();
     if (!scene) return evaluatedMap;
 
@@ -102,6 +105,109 @@ export class TimelineEvaluator {
 
         const nodeEval = evaluatedMap.get(track.targetNodeId);
         this._applyPropertyPath(nodeEval, track.propertyPath, evaluatedValue);
+      }
+    }
+
+    // 3. Evaluate nested compositions (BETA-UI-7)
+    const rawNodes = scene.nodes || scene.components || [];
+    if (Array.isArray(rawNodes)) {
+      for (const node of rawNodes) {
+        const isComp = node.type === 'Composition' || node.type === 'CompositionNode' || (node.properties && node.properties.sceneId);
+        if (isComp) {
+          const childSceneId = node.properties?.sceneId || node.sceneId;
+          const start = Math.round(node.properties?.startFrame ?? node.startFrame ?? 0);
+          const dur = Math.round(node.properties?.durationFrames ?? node.durationFrames ?? 60);
+          const offset = Math.round(node.properties?.localFrameOffset ?? node.localFrameOffset ?? 0);
+          const rate = parseFloat(node.properties?.playbackRate ?? node.playbackRate ?? 1.0);
+          const loop = Boolean(node.properties?.loop ?? node.loop ?? false);
+
+          let local = Math.floor((intFrame - start) * rate) + offset;
+          if (loop && dur > 0) {
+            local = ((local % dur) + dur) % dur;
+          } else {
+            local = Math.max(0, Math.min(dur, local));
+          }
+          const localFrame = Math.round(local);
+
+          if (!evaluatedMap.has(node.id)) {
+            evaluatedMap.set(node.id, {
+              transform: {},
+              properties: {},
+              visible: undefined
+            });
+          }
+
+          const nodeEval = evaluatedMap.get(node.id);
+          nodeEval.localFrame = localFrame;
+          nodeEval.childSceneId = childSceneId;
+
+          // Resolve child scene
+          let childScene = null;
+          if (options.sceneResolver && typeof options.sceneResolver === 'function') {
+            childScene = options.sceneResolver(childSceneId);
+          } else if (typeof SceneLibrary !== 'undefined') {
+            childScene = SceneLibrary.getScene(childSceneId);
+          }
+
+          if (childScene) {
+            const evalStack = new Set(options._evalStack || []);
+            if (!evalStack.has(childSceneId)) {
+              evalStack.add(childSceneId);
+              const childEval = TimelineEvaluator.evaluateScene(childScene, localFrame, {
+                ...options,
+                _evalStack: evalStack
+              });
+
+              // Ensure all nodes in the child composition are present in childEval
+              const childNodes = childScene.nodes || childScene.components || [];
+              for (const cn of childNodes) {
+                if (!childEval.has(cn.id)) {
+                  childEval.set(cn.id, {
+                    transform: {
+                      x: cn.x ?? cn.transform?.x ?? 0,
+                      y: cn.y ?? cn.transform?.y ?? 0,
+                      width: cn.width ?? cn.transform?.width ?? 100,
+                      height: cn.height ?? cn.transform?.height ?? 40,
+                      scaleX: cn.transform?.scaleX ?? 1.0,
+                      scaleY: cn.transform?.scaleY ?? 1.0,
+                      pivotX: cn.transform?.pivotX ?? 0.0,
+                      pivotY: cn.transform?.pivotY ?? 0.0,
+                      rotation: cn.transform?.rotation ?? 0.0,
+                      opacity: cn.opacity ?? cn.transform?.opacity ?? 1.0
+                    },
+                    properties: { ...(cn.properties || {}) },
+                    visible: cn.visible !== false
+                  });
+                }
+              }
+
+              nodeEval.nestedEvaluations = childEval;
+              if (childEval instanceof Map) {
+                for (const [childNodeId, childNodeVal] of childEval.entries()) {
+                  if (!evaluatedMap.has(childNodeId)) {
+                    evaluatedMap.set(childNodeId, childNodeVal);
+                  }
+                }
+              }
+            }
+          }
+
+          // Apply overrides
+          const overrides = node.overrides || node.properties?.overrides;
+          if (overrides && typeof overrides === 'object') {
+            if (overrides.visible !== undefined) nodeEval.visible = Boolean(overrides.visible);
+            if (overrides.opacity !== undefined) {
+              const clamped = Math.max(0, Math.min(1, Number(overrides.opacity)));
+              nodeEval.opacity = clamped;
+              nodeEval.transform.opacity = clamped;
+            }
+            if (overrides.x !== undefined) nodeEval.transform.x = Number(overrides.x);
+            if (overrides.y !== undefined) nodeEval.transform.y = Number(overrides.y);
+            if (overrides.scaleX !== undefined) nodeEval.transform.scaleX = Number(overrides.scaleX);
+            if (overrides.scaleY !== undefined) nodeEval.transform.scaleY = Number(overrides.scaleY);
+            if (overrides.rotation !== undefined) nodeEval.transform.rotation = Number(overrides.rotation);
+          }
+        }
       }
     }
 
