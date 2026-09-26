@@ -13,6 +13,19 @@ const results = {
   missing: []
 };
 
+// Resolve real local Windows devkitPro paths if process.env has stale linux defaults
+if (process.platform === 'win32') {
+  if ((!process.env.DEVKITPRO || !fs.existsSync(process.env.DEVKITPRO)) && fs.existsSync('C:/devkitPro')) {
+    process.env.DEVKITPRO = 'C:/devkitPro';
+  }
+  if ((!process.env.DEVKITARM || !fs.existsSync(process.env.DEVKITARM)) && fs.existsSync('C:/devkitPro/devkitARM')) {
+    process.env.DEVKITARM = 'C:/devkitPro/devkitARM';
+  }
+  if ((!process.env.CTRULIB || !fs.existsSync(process.env.CTRULIB)) && fs.existsSync('C:/devkitPro/libctru')) {
+    process.env.CTRULIB = 'C:/devkitPro/libctru';
+  }
+}
+
 // 1. Check Environment Variables
 const envVars = ['DEVKITPRO', 'DEVKITARM', 'CTRULIB'];
 for (const ev of envVars) {

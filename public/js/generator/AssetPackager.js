@@ -191,9 +191,17 @@ export class AssetPackager {
       const tex3dsBin = AssetPackager.findTex3ds();
       let finalBytes = null;
 
-      const isT3x = targetRomfsPath.toLowerCase().endsWith('.t3x') || 
-                    resolvedInfo.format === 'T3X' || 
-                    (resolvedInfo.target3DS && resolvedInfo.target3DS.t3xPath);
+      const isAudio = resolvedInfo.category === 'audio' || 
+                      assetEntry.category === 'audio' || 
+                      targetRomfsPath.includes('/audio/') ||
+                      resolvedInfo.format === 'BCSTM' ||
+                      resolvedInfo.format === 'WAV';
+
+      const isT3x = !isAudio && (
+        targetRomfsPath.toLowerCase().endsWith('.t3x') || 
+        resolvedInfo.format === 'T3X' || 
+        (Boolean(resolvedInfo.target3DS?.t3xPath) && String(resolvedInfo.target3DS.t3xPath).toLowerCase().endsWith('.t3x'))
+      );
 
       if (isT3x) {
         if (!tex3dsBin) {
@@ -267,7 +275,8 @@ export class AssetPackager {
       assetCount: stagedEntries.length,
       duplicateCount,
       totalBytes,
-      entries: stagedEntries
+      entries: stagedEntries,
+      assets: stagedEntries
     };
 
     const manifestJsonPath = path.join(stagingRoot, 'romfs_manifest.json');

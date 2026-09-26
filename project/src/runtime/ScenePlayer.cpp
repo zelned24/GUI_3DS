@@ -5,7 +5,7 @@ namespace Citro2D {
 
 ScenePlayer::ScenePlayer()
     : m_sceneDef{}
-    , m_timeline{}
+    , m_timeline(std::make_unique<SceneTimeline>(m_sceneDef))
     , m_state(PlaybackState::Stopped)
     , m_currentFrame(0)
     , m_frameTimer(0.0f)
@@ -15,7 +15,7 @@ ScenePlayer::ScenePlayer()
 
 ScenePlayer::ScenePlayer(const SceneDefinition& def)
     : m_sceneDef(def)
-    , m_timeline(def)
+    , m_timeline(std::make_unique<SceneTimeline>(m_sceneDef))
     , m_state(PlaybackState::Stopped)
     , m_currentFrame(0)
     , m_frameTimer(0.0f)
@@ -30,7 +30,7 @@ ScenePlayer::~ScenePlayer() {
 
 void ScenePlayer::load(const SceneDefinition& def) {
     m_sceneDef = def;
-    m_timeline = SceneTimeline(def);
+    m_timeline = std::make_unique<SceneTimeline>(m_sceneDef);
     m_state = PlaybackState::Stopped;
     m_currentFrame = 0;
     m_frameTimer = 0.0f;
@@ -80,7 +80,9 @@ void ScenePlayer::seek(uint32_t frame) {
         frame = m_sceneDef.durationFrames;
     }
     m_currentFrame = frame;
-    m_timeline.seek(frame);
+    if (m_timeline) {
+        m_timeline->seek(frame);
+    }
 }
 
 void ScenePlayer::update(float dt) {
@@ -105,7 +107,9 @@ void ScenePlayer::update(float dt) {
         }
     }
 
-    m_timeline.seek(m_currentFrame);
+    if (m_timeline) {
+        m_timeline->seek(m_currentFrame);
+    }
 }
 
 void ScenePlayer::calculateTextureScale(
@@ -146,7 +150,9 @@ void ScenePlayer::renderNode(Renderer2D& renderer, uint32_t nodeIndex) {
 
     EvaluatedTransform worldTransform;
     bool isVisible = false;
-    m_timeline.evaluateNodeWorld(nodeIndex, m_currentFrame, worldTransform, isVisible);
+    if (m_timeline) {
+        m_timeline->evaluateNodeWorld(nodeIndex, m_currentFrame, worldTransform, isVisible);
+    }
 
     if (!isVisible || worldTransform.opacity <= 0.001f) {
         return;

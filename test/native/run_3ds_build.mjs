@@ -10,6 +10,27 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '../..');
 
+// Ensure real local Windows devkitPro paths are resolved if process.env points to stale/default linux paths
+if (process.platform === 'win32') {
+  if ((!process.env.DEVKITPRO || !fs.existsSync(process.env.DEVKITPRO)) && fs.existsSync('C:/devkitPro')) {
+    process.env.DEVKITPRO = 'C:/devkitPro';
+  }
+  if ((!process.env.DEVKITARM || !fs.existsSync(process.env.DEVKITARM)) && fs.existsSync('C:/devkitPro/devkitARM')) {
+    process.env.DEVKITARM = 'C:/devkitPro/devkitARM';
+  }
+  if ((!process.env.CTRULIB || !fs.existsSync(process.env.CTRULIB)) && fs.existsSync('C:/devkitPro/libctru')) {
+    process.env.CTRULIB = 'C:/devkitPro/libctru';
+  }
+  const extraPaths = [
+    'C:\\devkitPro\\devkitARM\\bin',
+    'C:\\devkitPro\\tools\\bin',
+    'C:\\devkitPro\\msys2\\usr\\bin'
+  ].filter(p => fs.existsSync(p));
+  if (extraPaths.length > 0) {
+    process.env.PATH = extraPaths.join(path.delimiter) + path.delimiter + (process.env.PATH || '');
+  }
+}
+
 console.log('====================================================');
 console.log('  3DS CITRO2D / devkitARM HARDWARE COMPILATION PIPELINE ');
 console.log('====================================================');

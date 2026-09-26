@@ -5,6 +5,7 @@
 #include "gfx/renderer2d.hpp"
 #include "runtime/RuntimeAssetManager.hpp"
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -58,7 +59,7 @@ private:
     void renderNode(Renderer2D& renderer, uint32_t nodeIndex);
 
     SceneDefinition m_sceneDef;
-    SceneTimeline m_timeline;
+    std::unique_ptr<SceneTimeline> m_timeline;
     PlaybackState m_state;
     uint32_t m_currentFrame;
     float m_frameTimer;

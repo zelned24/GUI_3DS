@@ -38,6 +38,15 @@ export class AudioResolver {
         hash: 'sha256:78a0ba6a3bfbad783c3956fbeefb60fb53d99572cd9b025a9c004434993a062f'
       },
       {
+        id: 'se_select',
+        name: 'UI Select Sound',
+        category: 'audio',
+        format: 'BCSTM',
+        sourcePath: 'audio/se/select.wav',
+        romfsPath: 'romfs/audio/se_select.bcstm',
+        hash: 'sha256:78a0ba6a3bfbad783c3956fbeefb60fb53d99572cd9b025a9c004434993a062f'
+      },
+      {
         id: 'audio_se_hit_normal',
         name: 'Normal Hit Sound',
         category: 'audio',
@@ -95,13 +104,32 @@ export class AudioResolver {
   }
 
   /**
+   * Resolves an audio asset by ID (static helper).
+   * @param {string} id
+   * @returns {Object|null}
+   */
+  static resolve(id) {
+    if (!AudioResolver._defaultInstance) {
+      AudioResolver._defaultInstance = new AudioResolver();
+    }
+    return AudioResolver._defaultInstance.resolve(id);
+  }
+
+  /**
    * Resolves an audio asset by ID.
    * @param {string} id 
    * @returns {Object|null}
    */
   resolve(id) {
     if (!id || typeof id !== 'string') return null;
-    return this.catalog.get(id) || null;
+    let found = this.catalog.get(id);
+    if (!found && !id.startsWith('audio_')) {
+      found = this.catalog.get('audio_' + id);
+    }
+    if (!found && id.startsWith('audio_')) {
+      found = this.catalog.get(id.substring(6));
+    }
+    return found || null;
   }
 
   /**

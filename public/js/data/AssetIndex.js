@@ -42,13 +42,13 @@ export class AssetIndex {
    */
   static computeContentSha256(fileOrBuffer) {
     if (Buffer.isBuffer(fileOrBuffer)) {
-      return 'sha256:' + crypto.createHash('sha256').update(fileOrBuffer).digest('hex');
+      return crypto.createHash('sha256').update(fileOrBuffer).digest('hex');
     }
     if (typeof fileOrBuffer === 'string') {
       try {
         if (fs.existsSync(fileOrBuffer)) {
           const buf = fs.readFileSync(fileOrBuffer);
-          return 'sha256:' + crypto.createHash('sha256').update(buf).digest('hex');
+          return crypto.createHash('sha256').update(buf).digest('hex');
         }
       } catch (e) {}
     }
@@ -267,7 +267,7 @@ export class AssetIndex {
         dimensions: { width: 0, height: 0 },
         target3DS: {
           format: 'BCSTM',
-          t3xPath: au.romfs,
+          t3xPath: null,
           tex3dsFlags: ''
         },
         romfsPath: au.romfs,
@@ -320,11 +320,11 @@ export class AssetIndex {
       dimensions: rawEntry.dimensions || { width: 64, height: 64 },
       format: rawEntry.format || 'PNG',
       target3DS: {
-        format: rawEntry.target3DS?.format || 'RGBA4444',
-        t3xPath: rawEntry.target3DS?.t3xPath || `romfs/${rawEntry.category}/${rawEntry.id}.t3x`,
-        tex3dsFlags: rawEntry.target3DS?.tex3dsFlags || '-f rgba4444 -z auto'
+        format: rawEntry.target3DS?.format || (rawEntry.category === 'audio' ? 'BCSTM' : 'RGBA4444'),
+        t3xPath: (rawEntry.category === 'audio' || rawEntry.type === 'audio') ? null : (rawEntry.target3DS?.t3xPath || `romfs/${rawEntry.category}/${rawEntry.id}.t3x`),
+        tex3dsFlags: rawEntry.target3DS?.tex3dsFlags !== undefined ? rawEntry.target3DS.tex3dsFlags : (rawEntry.category === 'audio' ? '' : '-f rgba4444 -z auto')
       },
-      romfsPath: rawEntry.romfsPath || rawEntry.target3DS?.t3xPath || `romfs/${rawEntry.category}/${rawEntry.id}.t3x`,
+      romfsPath: rawEntry.romfsPath || (rawEntry.category === 'audio' ? `romfs/audio/${rawEntry.id}.bcstm` : `romfs/${rawEntry.category}/${rawEntry.id}.t3x`),
       status: rawEntry.status || status,
       size: size,
       physicalPath: physicalPath || null,
