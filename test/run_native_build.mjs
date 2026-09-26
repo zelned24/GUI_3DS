@@ -114,6 +114,8 @@ async function runNativeBuild() {
     path.join(genDir, 'src', 'screens', 'Scene.cpp'),
     path.join(genDir, 'src', 'screens', 'PikachuEntranceScene.cpp'),
     path.join(rootDir, 'project', 'src', 'gfx', 'renderer2d.cpp'),
+    path.join(rootDir, 'project', 'src', 'runtime', 'RuntimeAssetManager.cpp'),
+    path.join(rootDir, 'project', 'src', 'runtime', 'ScenePlayer.cpp'),
     path.join(rootDir, 'project', 'src', 'main.cpp'),
     path.join(rootDir, 'test', 'native', 'host_compat', 'runtime.cpp')
   ];

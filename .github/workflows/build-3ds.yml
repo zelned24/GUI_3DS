@@ -222,10 +222,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts
+          node scripts/generate_asset_artifacts.js
           cp build/GUI_3DS.3dsx artifacts/
           cp build/GUI_3DS.elf artifacts/
           cp project/generated/SceneManifest.json artifacts/
           cp build/romfs/romfs_manifest.json artifacts/
+          cp project/data/assets/asset-index.json artifacts/
+          cp project/data/assets/asset-integrity-report.json artifacts/
+          cp project/data/assets/runtime-metrics.json artifacts/
           cp -r project/generated artifacts/generated
           cp -r build/romfs artifacts/romfs
           cp build-log.txt artifacts/build-log.txt

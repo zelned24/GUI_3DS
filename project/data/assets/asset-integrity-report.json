@@ -1,0 +1,310 @@
+{
+  "schemaVersion": 1,
+  "sourceRepository": "https://github.com/pagefaultgames/pokerogue-assets",
+  "sourceRevision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+  "assetCount": 33,
+  "verifiedCount": 8,
+  "missingCount": 25,
+  "invalidCount": 0,
+  "unsupportedCount": 0,
+  "totalBytes": 9583,
+  "assets": [
+    {
+      "assetId": "audio_bgm_battle_wild",
+      "source": "audio/bgm/battle_wild.ogg",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/audio/bgm_battle_wild.bcstm",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "audio_bgm_victory",
+      "source": "audio/bgm/victory.ogg",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/audio/bgm_victory.bcstm",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "audio_se_hit_normal",
+      "source": "audio/se/hit_normal.wav",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/audio/se_hit_normal.bcstm",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "audio_se_select",
+      "source": "audio/se/select.wav",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "sha256:78a0ba6a3bfbad783c3956fbeefb60fb53d99572cd9b025a9c004434993a062f",
+      "romfsPath": "romfs/audio/se_select.bcstm",
+      "size": 8864,
+      "status": "AVAILABLE"
+    },
+    {
+      "assetId": "bg_arena_cave",
+      "source": "images/arenas/cave.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/arenas/cave.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "bg_arena_forest",
+      "source": "images/arenas/forest.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "sha256:836425182e211cf9c250147bc178b4c8ac7326b81b10ab1aabf4895cc724e59b",
+      "romfsPath": "romfs/arenas/forest.t3x",
+      "size": 103,
+      "status": "AVAILABLE"
+    },
+    {
+      "assetId": "bg_arena_gym",
+      "source": "images/arenas/gym.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/arenas/gym.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "bg_arena_plains",
+      "source": "images/arenas/plains.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "sha256:d618800d7b6edecff5d97324920288db0c4aec50b7396637c64c71aab118effe",
+      "romfsPath": "romfs/arenas/plains.t3x",
+      "size": 103,
+      "status": "AVAILABLE"
+    },
+    {
+      "assetId": "bg_arena_sea",
+      "source": "images/arenas/sea.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "sha256:bce3031fea8d58684af6b3276e45bcda2f50d89528d258dddf755c9f76df7e38",
+      "romfsPath": "romfs/arenas/sea.t3x",
+      "size": 104,
+      "status": "AVAILABLE"
+    },
+    {
+      "assetId": "bg_arena_space",
+      "source": "images/arenas/space.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/arenas/space.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "fx_impact_hit",
+      "source": "images/effects/hit.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/effects/fx_impact_hit.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "fx_slash",
+      "source": "images/effects/slash.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/effects/fx_slash.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "fx_thunder",
+      "source": "images/effects/thunder.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/effects/fx_thunder.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "item_pokeball",
+      "source": "images/items/pokeball.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/items/item_pokeball.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "item_potion",
+      "source": "images/items/potion.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/items/item_potion.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "item_rare_candy",
+      "source": "images/items/rare_candy.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/items/item_rare_candy.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "item_super_potion",
+      "source": "images/items/super_potion.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/items/item_super_potion.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "item_ultra_ball",
+      "source": "images/items/ultra_ball.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/items/item_ultra_ball.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "pkmn_001",
+      "source": "images/pokemon/1.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/sprites/pokemon/1.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "pkmn_006",
+      "source": "images/pokemon/6.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/sprites/pokemon/6.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "pkmn_025",
+      "source": "images/pokemon/25.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "sha256:91e5f6d2f0279062761689b3ff0a2f91e2042377d6c712e8dbc7761b5b2b69ba",
+      "romfsPath": "romfs/sprites/pokemon/25.t3x",
+      "size": 102,
+      "status": "AVAILABLE"
+    },
+    {
+      "assetId": "pkmn_076",
+      "source": "images/pokemon/76.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/sprites/pokemon/76.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "pkmn_094",
+      "source": "images/pokemon/94.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/sprites/pokemon/94.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "pkmn_448",
+      "source": "images/pokemon/448.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/sprites/pokemon/448.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "pokemon_sprite_25_front",
+      "source": "images/pokemon/25.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "sha256:91e5f6d2f0279062761689b3ff0a2f91e2042377d6c712e8dbc7761b5b2b69ba",
+      "romfsPath": "romfs/sprites/pokemon/25.t3x",
+      "size": 102,
+      "status": "AVAILABLE"
+    },
+    {
+      "assetId": "ui_command_panel",
+      "source": "images/ui/command_panel.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "sha256:d7bed892e1f8a8d403096c95eba8f94d03f2ee38351926eec06b242eba37666c",
+      "romfsPath": "romfs/ui/ui_command_panel.t3x",
+      "size": 103,
+      "status": "AVAILABLE"
+    },
+    {
+      "assetId": "ui_cursor_arrow",
+      "source": "images/ui/cursor.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/ui/ui_cursor_arrow.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "ui_dialog_box",
+      "source": "images/ui/dialog_box.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "sha256:1a71a2101c8ab324f420cef5999c55a47a322358222125a5f7ebf9a1ed44d4a7",
+      "romfsPath": "romfs/ui/ui_dialog_box.t3x",
+      "size": 102,
+      "status": "AVAILABLE"
+    },
+    {
+      "assetId": "ui_hp_box_enemy",
+      "source": "images/ui/hp_box_enemy.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/ui/ui_hp_box_enemy.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "ui_hp_box_player",
+      "source": "images/ui/hp_box_player.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/ui/ui_hp_box_player.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "ui_pokeball_icon",
+      "source": "images/ui/pokeball_icon.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/ui/ui_pokeball_icon.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "ui_type_electric",
+      "source": "images/types/electric.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/ui/ui_type_electric.t3x",
+      "size": 0,
+      "status": "MISSING"
+    },
+    {
+      "assetId": "ui_type_rock",
+      "source": "images/types/rock.png",
+      "revision": "056a1f408f26a3be4fef243f7462cb43608c7928",
+      "contentSha256": "unresolved",
+      "romfsPath": "romfs/ui/ui_type_rock.t3x",
+      "size": 0,
+      "status": "MISSING"
+    }
+  ]
+}

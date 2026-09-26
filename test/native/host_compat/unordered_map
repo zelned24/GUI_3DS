@@ -1,0 +1,56 @@
+#pragma once
+#include "cstddef"
+
+namespace std {
+template <typename K, typename V>
+class unordered_map {
+public:
+    struct Entry {
+        K first;
+        V second;
+    };
+private:
+    Entry m_entries[64];
+    size_t m_size;
+public:
+    unordered_map() : m_size(0) {}
+    size_t size() const { return m_size; }
+    bool empty() const { return m_size == 0; }
+    void clear() { m_size = 0; }
+    Entry* begin() { return m_entries; }
+    const Entry* begin() const { return m_entries; }
+    Entry* end() { return m_entries + m_size; }
+    const Entry* end() const { return m_entries + m_size; }
+
+    Entry* find(const K& key) {
+        for (size_t i = 0; i < m_size; ++i) {
+            if (m_entries[i].first == key) return &m_entries[i];
+        }
+        return end();
+    }
+    const Entry* find(const K& key) const {
+        for (size_t i = 0; i < m_size; ++i) {
+            if (m_entries[i].first == key) return &m_entries[i];
+        }
+        return end();
+    }
+    V& operator[](const K& key) {
+        for (size_t i = 0; i < m_size; ++i) {
+            if (m_entries[i].first == key) return m_entries[i].second;
+        }
+        if (m_size < 64) {
+            m_entries[m_size].first = key;
+            return m_entries[m_size++].second;
+        }
+        return m_entries[0].second;
+    }
+    void erase(Entry* it) {
+        if (!it || it < m_entries || it >= m_entries + m_size) return;
+        size_t idx = it - m_entries;
+        for (size_t i = idx; i + 1 < m_size; ++i) {
+            m_entries[i] = m_entries[i + 1];
+        }
+        m_size--;
+    }
+};
+}

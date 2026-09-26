@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "budget": {
+    "maxLoadedAssets": 64,
+    "maxCacheMissesPerFrame": 0,
+    "maxDrawCallsPerFrame": 128,
+    "maxActiveNodes": 256,
+    "maxActiveTracks": 128
+  },
+  "instrumentation": {
+    "loadedAssetCount": 3,
+    "cacheHitCount": 19,
+    "cacheMissCount": 1,
+    "physicalLoadCount": 1,
+    "drawCallCount": 2,
+    "activeNodeCount": 2,
+    "activeTrackCount": 5
+  }
+}

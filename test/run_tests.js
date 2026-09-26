@@ -3323,13 +3323,15 @@ test('BETA-UI-5.1: Real content SHA-256 hashes generated from physical file byte
   const fileBytes = fs.readFileSync(pikaFile);
   const expectedHash = crypto.createHash('sha256').update(fileBytes).digest('hex');
   const computedHash = AssetIndex.computeContentSha256(pikaFile);
-  assert.strictEqual(computedHash, expectedHash);
-  assert.strictEqual(computedHash, '91e5f6d2f0279062761689b3ff0a2f91e2042377d6c712e8dbc7761b5b2b69ba');
+  assert.strictEqual(computedHash.replace(/^sha256:/, ''), expectedHash);
+  assert.strictEqual(computedHash.replace(/^sha256:/, ''), '91e5f6d2f0279062761689b3ff0a2f91e2042377d6c712e8dbc7761b5b2b69ba');
 
   // Verify AudioResolver uses real content hash
   const audioFile = path.join(__dirname, 'fixtures/assets/select.wav');
   const audioExpected = crypto.createHash('sha256').update(fs.readFileSync(audioFile)).digest('hex');
-  const audioRes = AudioResolver.resolve('se_select');
+  const audioResolver = new AudioResolver();
+  const audioRes = audioResolver.resolve('audio_se_select');
+  assert.ok(audioRes, 'audio_se_select must resolve');
   assert.strictEqual(audioRes.hash.replace(/^sha256:/, ''), audioExpected);
   assert.strictEqual(audioRes.hash.replace(/^sha256:/, ''), '78a0ba6a3bfbad783c3956fbeefb60fb53d99572cd9b025a9c004434993a062f');
 

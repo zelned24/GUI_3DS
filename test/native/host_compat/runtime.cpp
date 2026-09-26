@@ -22,6 +22,12 @@ void* operator new(unsigned long sz) {
 
 extern "C" {
 
+void* __dso_handle = nullptr;
+int __cxa_atexit(void (*func)(void*), void* arg, void* dso_handle) {
+    (void)func; (void)arg; (void)dso_handle;
+    return 0;
+}
+
 bool C3D_Init(size_t cmdBufSize) { (void)cmdBufSize; return true; }
 void C3D_Fini(void) {}
 bool C3D_FrameBegin(u8 flags) { (void)flags; return true; }

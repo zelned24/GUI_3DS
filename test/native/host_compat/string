@@ -1,0 +1,39 @@
+#pragma once
+#include "cstring"
+#include "cstddef"
+
+namespace std {
+class string {
+    char m_buf[128];
+    size_t m_len;
+public:
+    string() : m_len(0) { m_buf[0] = '\0'; }
+    string(const char* s) {
+        if (!s) { m_len = 0; m_buf[0] = '\0'; return; }
+        m_len = 0;
+        while (s[m_len] && m_len < 127) { m_buf[m_len] = s[m_len]; m_len++; }
+        m_buf[m_len] = '\0';
+    }
+    const char* c_str() const { return m_buf; }
+    size_t length() const { return m_len; }
+    size_t size() const { return m_len; }
+    bool empty() const { return m_len == 0; }
+    bool operator==(const string& o) const { return strcmp(m_buf, o.m_buf) == 0; }
+    bool operator==(const char* s) const { return strcmp(m_buf, s) == 0; }
+    string operator+(const string& o) const {
+        string res(m_buf);
+        size_t i = 0;
+        while (o.m_buf[i] && (res.m_len < 127)) {
+            res.m_buf[res.m_len++] = o.m_buf[i++];
+        }
+        res.m_buf[res.m_len] = '\0';
+        return res;
+    }
+    string operator+(const char* s) const {
+        return *this + string(s);
+    }
+    friend string operator+(const char* lhs, const string& rhs) {
+        return string(lhs) + rhs;
+    }
+};
+}
