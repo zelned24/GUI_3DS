@@ -187,7 +187,7 @@ export class AnimationTrack {
         }
 
         const t = (intFrame - k0.frame) / (k1.frame - k0.frame);
-        return Interpolation.interpolate(k0.value, k1.value, t, k0.interpolation, this.valueType);
+        return Interpolation.interpolate(k0.value, k1.value, t, k0.interpolation, this.valueType, k0.curve);
       }
     }
 

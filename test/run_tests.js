@@ -55,6 +55,11 @@ import { AssetPackager } from '../public/js/generator/AssetPackager.js';
 import crypto from 'crypto';
 import { AssetIndex, defaultAssetIndex } from '../public/js/data/AssetIndex.js';
 import { AssetBrowser } from '../public/js/editor/AssetBrowser.js';
+import { AnimationClip } from '../public/js/animation/AnimationClip.js';
+import { ClipLibrary } from '../public/js/animation/ClipLibrary.js';
+import { HistoryManager } from '../public/js/core/HistoryManager.js';
+import { TimelineUI } from '../public/js/editor/TimelineUI.js';
+import { InterpolationTypes, TangentModes } from '../public/js/animation/Keyframe.js';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -3715,6 +3720,557 @@ test('BETA-UI-5.21: Real devkitARM compilation of RuntimeAssetManager and SceneP
       }
     }
   }
+});
+
+test('BETA-UI-6.1: Multi-keyframe selection', () => {
+  const scene = new SceneModel({ id: 'test_multi_sel', durationFrames: 60 });
+  const trackA = new AnimationTrack({ targetNodeId: 'nodeA', propertyPath: 'transform.x' });
+  const kfA1 = trackA.addKeyframe(10, 100);
+  const kfA2 = trackA.addKeyframe(20, 200);
+  const trackB = new AnimationTrack({ targetNodeId: 'nodeB', propertyPath: 'opacity' });
+  const kfB1 = trackB.addKeyframe(15, 0.5);
+  scene.addTrack(trackA);
+  scene.addTrack(trackB);
+
+  const ui = new TimelineUI({ sceneModel: scene });
+
+  // Single selection
+  ui.selectKeyframe(trackA, kfA1, false);
+  assert.strictEqual(ui.selectedKeyframes.size, 1);
+  assert.ok(ui.isKeyframeSelected(trackA, kfA1));
+
+  // Multi selection across different tracks
+  ui.selectKeyframe(trackB, kfB1, true);
+  assert.strictEqual(ui.selectedKeyframes.size, 2);
+  assert.ok(ui.isKeyframeSelected(trackA, kfA1));
+  assert.ok(ui.isKeyframeSelected(trackB, kfB1));
+
+  // Toggle selection
+  ui.selectKeyframe(trackA, kfA1, true, true);
+  assert.strictEqual(ui.selectedKeyframes.size, 1);
+  assert.strictEqual(ui.isKeyframeSelected(trackA, kfA1), false);
+  assert.ok(ui.isKeyframeSelected(trackB, kfB1));
+
+  // Clear selection
+  ui.clearKeyframeSelection();
+  assert.strictEqual(ui.selectedKeyframes.size, 0);
+});
+
+test('BETA-UI-6.2: Rubber-band selection', () => {
+  const scene = new SceneModel({ id: 'test_rubberband', durationFrames: 60 });
+  const trackA = new AnimationTrack({ id: 'track_a', targetNodeId: 'nodeA', propertyPath: 'transform.x' });
+  const kf1 = trackA.addKeyframe(10, 100);
+  const kf2 = trackA.addKeyframe(25, 200);
+  const kf3 = trackA.addKeyframe(50, 300);
+  scene.addTrack(trackA);
+
+  const ui = new TimelineUI({ sceneModel: scene });
+  // Select using frame range box
+  ui.selectKeyframesInRect({ minFrame: 5, maxFrame: 30 });
+  assert.strictEqual(ui.selectedKeyframes.size, 2);
+  assert.ok(ui.isKeyframeSelected(trackA, kf1));
+  assert.ok(ui.isKeyframeSelected(trackA, kf2));
+  assert.strictEqual(ui.isKeyframeSelected(trackA, kf3), false);
+});
+
+test('BETA-UI-6.3: Group keyframe move', () => {
+  const scene = new SceneModel({ id: 'test_group_move', durationFrames: 60 });
+  const history = new HistoryManager();
+  const trackA = new AnimationTrack({ targetNodeId: 'nodeA', propertyPath: 'transform.x' });
+  const kf1 = trackA.addKeyframe(10, 100);
+  const kf2 = trackA.addKeyframe(20, 200);
+  const kf3 = trackA.addKeyframe(35, 350);
+  const kfStationary = trackA.addKeyframe(50, 500);
+  scene.addTrack(trackA);
+
+  const ui = new TimelineUI({ sceneModel: scene, historyManager: history });
+  ui.selectKeyframe(trackA, kf1, true);
+  ui.selectKeyframe(trackA, kf2, true);
+  ui.selectKeyframe(trackA, kf3, true);
+
+  // Move +8 frames: 10->18, 20->28, 35->43
+  const moved = ui.moveSelectedKeyframes(8);
+  assert.strictEqual(moved, true);
+  assert.strictEqual(kf1.frame, 18);
+  assert.strictEqual(kf2.frame, 28);
+  assert.strictEqual(kf3.frame, 43);
+  assert.strictEqual(kfStationary.frame, 50);
+
+  // Undo group move
+  history.undo();
+  assert.strictEqual(kf1.frame, 10);
+  assert.strictEqual(kf2.frame, 20);
+  assert.strictEqual(kf3.frame, 35);
+
+  // Redo group move
+  history.redo();
+  assert.strictEqual(kf1.frame, 18);
+  assert.strictEqual(kf2.frame, 28);
+  assert.strictEqual(kf3.frame, 43);
+
+  // Collision policy: moving +7 would put kf3 at 43+7 = 50, which collides with stationary kf at 50!
+  const collisionRejected = ui.moveSelectedKeyframes(7);
+  assert.strictEqual(collisionRejected, false, 'Collision must be deterministically rejected');
+  assert.strictEqual(kf3.frame, 43);
+});
+
+test('BETA-UI-6.4: Copy/paste', () => {
+  const scene = new SceneModel({ id: 'test_copy_paste', durationFrames: 80 });
+  const history = new HistoryManager();
+  const trackA = new AnimationTrack({ targetNodeId: 'nodeA', propertyPath: 'transform.x' });
+  const kf1 = trackA.addKeyframe(10, 100);
+  const kf2 = trackA.addKeyframe(25, 250);
+  scene.addTrack(trackA);
+
+  const ui = new TimelineUI({ sceneModel: scene, historyManager: history });
+  ui.selectKeyframe(trackA, kf1, true);
+  ui.selectKeyframe(trackA, kf2, true);
+
+  const copied = ui.copySelectedKeyframes();
+  assert.strictEqual(copied.length, 2);
+
+  // Paste relative to playhead at frame 40
+  const pasted = ui.pasteKeyframes(40);
+  assert.strictEqual(pasted.length, 2);
+
+  const kfPasted1 = trackA.keyframes.find(k => k.frame === 40);
+  const kfPasted2 = trackA.keyframes.find(k => k.frame === 55);
+  assert.ok(kfPasted1, 'Keyframe pasted at frame 40');
+  assert.ok(kfPasted2, 'Keyframe pasted at frame 55');
+  assert.strictEqual(kfPasted1.value, 100);
+  assert.strictEqual(kfPasted2.value, 250);
+
+  // Undo paste
+  history.undo();
+  assert.strictEqual(trackA.keyframes.length, 2);
+  assert.strictEqual(trackA.keyframes.find(k => k.frame === 40), undefined);
+});
+
+test('BETA-UI-6.5: Duplicate/delete', () => {
+  const scene = new SceneModel({ id: 'test_dup_del', durationFrames: 60 });
+  const history = new HistoryManager();
+  const track = new AnimationTrack({ targetNodeId: 'nodeA', propertyPath: 'transform.x' });
+  const kf1 = track.addKeyframe(10, 100);
+  scene.addTrack(track);
+
+  const ui = new TimelineUI({ sceneModel: scene, historyManager: history });
+  ui.selectKeyframe(track, kf1);
+
+  // Duplicate with offset 5 -> frame 15
+  const dups = ui.duplicateSelectedKeyframes(5);
+  assert.strictEqual(dups.length, 1);
+  assert.strictEqual(dups[0].frame, 15);
+  assert.strictEqual(track.keyframes.length, 2);
+
+  // Undo duplicate
+  history.undo();
+  assert.strictEqual(track.keyframes.length, 1);
+
+  // Redo duplicate
+  history.redo();
+  assert.strictEqual(track.keyframes.length, 2);
+
+  // Delete duplicate keyframe
+  ui.clearKeyframeSelection();
+  ui.selectKeyframe(track, track.keyframes.find(k => k.frame === 15));
+  const delCount = ui.deleteSelectedKeyframes();
+  assert.strictEqual(delCount, 1);
+  assert.strictEqual(track.keyframes.length, 1);
+
+  // Undo delete
+  history.undo();
+  assert.strictEqual(track.keyframes.length, 2);
+});
+
+test('BETA-UI-6.6: Curve data persistence', () => {
+  const kf = new Keyframe({
+    frame: 12,
+    value: 42.5,
+    interpolation: InterpolationTypes.BEZIER,
+    curve: {
+      mode: TangentModes.BEZIER,
+      cp1: [0.3, 0.15],
+      cp2: [0.75, 0.85]
+    }
+  });
+
+  const json = kf.toJSON();
+  assert.strictEqual(json.interpolation, 'bezier');
+  assert.strictEqual(json.curve.mode, 'bezier');
+  assert.deepStrictEqual(json.curve.cp1, [0.3, 0.15]);
+  assert.deepStrictEqual(json.curve.cp2, [0.75, 0.85]);
+
+  const reconstructed = Keyframe.fromJSON(json);
+  assert.strictEqual(reconstructed.interpolation, 'bezier');
+  assert.deepStrictEqual(reconstructed.curve.cp1, [0.3, 0.15]);
+  assert.deepStrictEqual(reconstructed.curve.cp2, [0.75, 0.85]);
+});
+
+test('BETA-UI-6.7: Tangent mode persistence', () => {
+  assert.strictEqual(TangentModes.AUTO, 'auto');
+  assert.strictEqual(TangentModes.LINEAR, 'linear');
+  assert.strictEqual(TangentModes.STEP, 'step');
+  assert.strictEqual(TangentModes.BEZIER, 'bezier');
+
+  for (const mode of Object.values(TangentModes)) {
+    const kf = new Keyframe({ frame: 0, value: 1, curve: { mode } });
+    const json = kf.toJSON();
+    assert.strictEqual(json.curve.mode, mode);
+    const roundtrip = Keyframe.fromJSON(json);
+    assert.strictEqual(roundtrip.curve.mode, mode);
+  }
+});
+
+test('BETA-UI-6.8: Graph editor evaluation', () => {
+  // Test boundary values
+  assert.strictEqual(Interpolation.evaluateBezier(0.0), 0.0);
+  assert.strictEqual(Interpolation.evaluateBezier(1.0), 1.0);
+
+  // Custom bezier with ease: (0.25, 0.1, 0.25, 1.0)
+  const mid = Interpolation.evaluateBezier(0.5, 0.25, 0.1, 0.25, 1.0);
+  assert.ok(mid > 0.0 && mid < 1.0, 'Mid progress must be between 0 and 1');
+  assert.ok(Math.abs(mid - 0.8) < 0.2, 'Bezier ease curve should have progressed substantially by t=0.5');
+
+  // Clamping test
+  assert.strictEqual(Interpolation.clampValue(-0.5, 'opacity'), 0.0);
+  assert.strictEqual(Interpolation.clampValue(1.5, 'opacity'), 1.0);
+  assert.strictEqual(Interpolation.clampValue(0.7, 'opacity'), 0.7);
+  assert.strictEqual(Interpolation.clampValue(120, 'transform.x'), 120);
+});
+
+test('BETA-UI-6.9: AnimationClip model', () => {
+  const clip = new AnimationClip({
+    id: 'test_clip',
+    name: 'Test Clip',
+    durationFrames: 30
+  });
+  const track = clip.addTrack('transform.x');
+  track.addKeyframe(0, 0);
+  track.addKeyframe(30, 100);
+
+  assert.strictEqual(clip.durationFrames, 30);
+  assert.strictEqual(clip.tracks.length, 1);
+
+  const json = clip.toJSON();
+  assert.strictEqual(json.id, 'test_clip');
+  assert.strictEqual(json.durationFrames, 30);
+  assert.strictEqual(json.tracks.length, 1);
+
+  const reconstructed = AnimationClip.fromJSON(json);
+  assert.strictEqual(reconstructed.id, 'test_clip');
+  assert.strictEqual(reconstructed.durationFrames, 30);
+  assert.strictEqual(reconstructed.tracks.length, 1);
+  assert.strictEqual(reconstructed.tracks[0].keyframes.length, 2);
+});
+
+test('BETA-UI-6.10: Clip apply', () => {
+  const scene = new SceneModel({ id: 'test_clip_apply', durationFrames: 60 });
+  const node = ComponentRegistry.create('Image', { id: 'target_node', screen: 'top' });
+  scene.addNode(node);
+
+  const clip = ClipLibrary.get('SlideInLeft');
+  assert.ok(clip, 'SlideInLeft preset must exist in ClipLibrary');
+
+  const appliedTracks = ClipLibrary.applyClipToNode(scene, clip, 'target_node', 10);
+  assert.ok(appliedTracks.length > 0, 'Must generate tracks for target_node');
+
+  const xTrack = scene.tracks.find(t => t.targetNodeId === 'target_node' && t.propertyPath === 'transform.x');
+  assert.ok(xTrack, 'Track transform.x must be added to scene');
+  assert.strictEqual(xTrack.keyframes[0].frame, 10, 'First keyframe starts at playhead frame 10');
+  assert.strictEqual(xTrack.keyframes[1].frame, 10 + clip.durationFrames, 'Second keyframe at playhead + duration');
+});
+
+test('BETA-UI-6.11: Clip retiming', () => {
+  const clip = new AnimationClip({ id: 'retime_test', durationFrames: 30 });
+  const track = clip.addTrack('transform.x');
+  track.addKeyframe(0, 0);
+  track.addKeyframe(15, 50);
+  track.addKeyframe(30, 100);
+
+  // Retime to 60 frames
+  clip.retime(60);
+  assert.strictEqual(clip.durationFrames, 60);
+  assert.strictEqual(track.keyframes[0].frame, 0);
+  assert.strictEqual(track.keyframes[1].frame, 30);
+  assert.strictEqual(track.keyframes[2].frame, 60);
+  assert.strictEqual(track.keyframes[1].value, 50, 'Values must not be altered by retiming');
+});
+
+test('BETA-UI-6.12: Sequencer placement', () => {
+  const scene = new SceneModel({ id: 'test_seq_eval', durationFrames: 80 });
+  const node = ComponentRegistry.create('Image', { id: 'seq_node', screen: 'top', x: 0 });
+  scene.addNode(node);
+
+  const clip = new AnimationClip({ id: 'seq_clip', durationFrames: 20 });
+  const ct = clip.addTrack('transform.x');
+  ct.addKeyframe(0, 50);
+  ct.addKeyframe(20, 250);
+  scene.addClip(clip);
+
+  scene.addSequenceItem({
+    id: 'seq_1',
+    clipId: 'seq_clip',
+    targetNodeId: 'seq_node',
+    startFrame: 10,
+    durationFrames: 20,
+    loopCount: 1
+  });
+
+  // Evaluate at frame 5 (before startFrame 10): node unaffected by clip
+  const evalBefore = TimelineEvaluator.evaluateScene(scene, 5);
+  assert.strictEqual(evalBefore.get('seq_node'), undefined);
+
+  // Evaluate at frame 20 (midpoint of clip, offset 10 of 20): value is 150
+  const evalMid = TimelineEvaluator.evaluateScene(scene, 20);
+  assert.ok(evalMid.has('seq_node'));
+  assert.strictEqual(evalMid.get('seq_node').transform.x, 150);
+
+  // Evaluate at frame 40 (after clip end at frame 30): node unaffected by clip
+  const evalAfter = TimelineEvaluator.evaluateScene(scene, 40);
+  assert.strictEqual(evalAfter.get('seq_node'), undefined);
+});
+
+test('BETA-UI-6.13: Marker editing', () => {
+  const scene = new SceneModel({ id: 'test_markers' });
+  scene.addMarker(30, 'MidEvent', 'Event');
+  scene.addMarker(10, 'StartEvent', 'Event');
+  scene.addMarker(50, 'EndEvent', 'Event');
+
+  assert.strictEqual(scene.markers.length, 3);
+  assert.strictEqual(scene.markers[0].frame, 10);
+  assert.strictEqual(scene.markers[1].frame, 30);
+  assert.strictEqual(scene.markers[2].frame, 50);
+
+  // Update marker
+  scene.updateMarker(1, { name: 'RenamedMid', frame: 25 });
+  assert.strictEqual(scene.markers[1].name, 'RenamedMid');
+  assert.strictEqual(scene.markers[1].frame, 25);
+
+  // Delete marker
+  scene.deleteMarker(0);
+  assert.strictEqual(scene.markers.length, 2);
+  assert.strictEqual(scene.markers[0].name, 'RenamedMid');
+});
+
+test('BETA-UI-6.14: Audio cue editing', () => {
+  const scene = new SceneModel({ id: 'test_audio_cue' });
+  scene.addAudioCue(15, 'audio_se_select', 0.8, 0);
+  assert.strictEqual(scene.audioCues.length, 1);
+  assert.strictEqual(scene.audioCues[0].frame, 15);
+  assert.strictEqual(scene.audioCues[0].volume, 0.8);
+
+  // Update volume
+  scene.updateAudioCue(0, { volume: 0.5, channel: 1 });
+  assert.strictEqual(scene.audioCues[0].volume, 0.5);
+  assert.strictEqual(scene.audioCues[0].channel, 1);
+
+  // Delete audio cue
+  scene.deleteAudioCue(0);
+  assert.strictEqual(scene.audioCues.length, 0);
+});
+
+test('BETA-UI-6.15: Snap behavior', () => {
+  const scene = new SceneModel({ id: 'test_snap', durationFrames: 100 });
+  scene.addMarker(20, 'SnapMarker');
+  scene.addAudioCue(40, 'se_select');
+  const track = new AnimationTrack({ targetNodeId: 'node', propertyPath: 'transform.x' });
+  track.addKeyframe(60, 100);
+  scene.addTrack(track);
+
+  const ui = new TimelineUI({ sceneModel: scene });
+
+  // Snap to start boundary
+  assert.strictEqual(ui.snapFrame(2, 3), 0);
+  // Snap to marker at 20
+  assert.strictEqual(ui.snapFrame(19, 3), 20);
+  assert.strictEqual(ui.snapFrame(22, 3), 20);
+  // Snap to audio cue at 40
+  assert.strictEqual(ui.snapFrame(41, 3), 40);
+  // Snap to keyframe at 60
+  assert.strictEqual(ui.snapFrame(58, 3), 60);
+  // Snap to end boundary at 100
+  assert.strictEqual(ui.snapFrame(98, 3), 100);
+  // Out of threshold -> unsnapped exact frame
+  assert.strictEqual(ui.snapFrame(75, 3), 75);
+});
+
+test('BETA-UI-6.16: Old scene migration', () => {
+  const oldV2Scene = {
+    schemaVersion: 2,
+    id: "OldScene",
+    durationFrames: 60,
+    fps: 60,
+    components: [],
+    tracks: []
+  };
+
+  // Loading old scene without clips must preserve compatibility and initialize clips/sequence
+  const model = SceneModel.fromJSON(oldV2Scene);
+  assert.strictEqual(model.schemaVersion, 2);
+  assert.deepStrictEqual(model.clips, []);
+  assert.deepStrictEqual(model.sequence, []);
+
+  // Explicit migration to v3
+  const migrated = SceneModel.migrateV2ToV3(oldV2Scene);
+  assert.strictEqual(migrated.schemaVersion, 3);
+  assert.ok(Array.isArray(migrated.clips));
+  assert.ok(Array.isArray(migrated.sequence));
+});
+
+test('BETA-UI-6.17: Exported clip data', () => {
+  const scenePath = path.join(__dirname, '../project/screens/AdvancedAnimation.json');
+  const sceneData = JSON.parse(fs.readFileSync(scenePath, 'utf8'));
+  const exported = SceneCppExporter.export(sceneData);
+
+  assert.ok(exported.dataHpp.includes('struct SceneClip'), 'SceneData.hpp must declare SceneClip');
+  assert.ok(exported.dataHpp.includes('struct SceneSequenceItem'), 'SceneData.hpp must declare SceneSequenceItem');
+  assert.ok(exported.dataCpp.includes('s_clips'), 'SceneData.cpp must define s_clips static array');
+  assert.ok(exported.dataCpp.includes('s_sequence'), 'SceneData.cpp must define s_sequence static array');
+  assert.ok(exported.dataCpp.includes('InterpolationType::Bezier'), 'SceneData.cpp must support InterpolationType::Bezier');
+});
+
+test('BETA-UI-6.18: Runtime clip evaluation', () => {
+  const scenePath = path.join(__dirname, '../project/screens/AdvancedAnimation.json');
+  const sceneData = JSON.parse(fs.readFileSync(scenePath, 'utf8'));
+  const exported = SceneCppExporter.export(sceneData);
+
+  // Evaluate using the C++ replica evaluator
+  const evalAt0 = SceneCppExporter.evaluateExportedData(exported.exportModel, 0);
+  const evalAt15 = SceneCppExporter.evaluateExportedData(exported.exportModel, 15);
+  const evalAt30 = SceneCppExporter.evaluateExportedData(exported.exportModel, 30);
+
+  // clip_fade_slide affects pikachu_sprite from frame 0 to 30
+  assert.strictEqual(evalAt0.get('pikachu_sprite').opacity, 0.0);
+  assert.ok(evalAt15.get('pikachu_sprite').opacity > 0.0 && evalAt15.get('pikachu_sprite').opacity < 1.0);
+  assert.strictEqual(evalAt30.get('pikachu_sprite').opacity, 1.0);
+});
+
+test('BETA-UI-6.19: Preview/runtime parity', async () => {
+  const scene = new SceneModel({
+    id: 'ParityTestScene',
+    durationFrames: 60,
+    fps: 60
+  });
+
+  const node = ComponentRegistry.create('Image', {
+    id: 'parity_node',
+    screen: 'top',
+    x: 0,
+    y: 0,
+    width: 64,
+    height: 64,
+    properties: { asset: 'bg_arena_plains' }
+  });
+  scene.addNode(node);
+
+  const trackBezier = new AnimationTrack({ targetNodeId: 'parity_node', propertyPath: 'transform.x' });
+  trackBezier.addKeyframe(0, 0, 'bezier', { mode: 'bezier', cp1: [0.25, 0.1], cp2: [0.25, 1.0] });
+  trackBezier.addKeyframe(60, 200, 'linear');
+  scene.addTrack(trackBezier);
+
+  const result = await NativeParityRunner.runParityTest(scene, {
+    frames: [0, 15, 30, 45, 60]
+  });
+
+  assert.strictEqual(result.pass, true, 'Real C++ and JS evaluation must pass parity checks');
+});
+
+test('BETA-UI-6.20: Export/runtime parity', () => {
+  const scenePath = path.join(__dirname, '../project/screens/AdvancedAnimation.json');
+  const sceneData = JSON.parse(fs.readFileSync(scenePath, 'utf8'));
+  const exported = SceneCppExporter.export(sceneData);
+
+  for (let f = 0; f <= 60; f += 10) {
+    const jsMap = TimelineEvaluator.evaluateScene(sceneData, f);
+    const cppMap = SceneCppExporter.evaluateExportedData(exported.exportModel, f);
+
+    for (const [nodeId, jsVal] of jsMap) {
+      const cppVal = cppMap.get(nodeId);
+      assert.ok(cppVal, `Node ${nodeId} must be present in exported C++ evaluation`);
+      if (jsVal.transform.x !== undefined) {
+        assert.ok(Math.abs(jsVal.transform.x - cppVal.transform.x) < 0.01, `X mismatch at frame ${f}`);
+      }
+      if (jsVal.transform.y !== undefined) {
+        assert.ok(Math.abs(jsVal.transform.y - cppVal.transform.y) < 0.01, `Y mismatch at frame ${f}`);
+      }
+      if (jsVal.opacity !== undefined) {
+        assert.ok(Math.abs(jsVal.opacity - cppVal.opacity) < 0.01, `Opacity mismatch at frame ${f}`);
+      }
+    }
+  }
+});
+
+test('BETA-UI-6.21: Undo/redo coverage', () => {
+  const history = new HistoryManager();
+  const scene = new SceneModel({ id: 'test_undo_redo' });
+
+  // 1. Add clip undo/redo
+  const clip = new AnimationClip({ id: 'c1', name: 'Clip 1', durationFrames: 30 });
+  history.execute({
+    name: 'Add Clip',
+    execute: () => scene.addClip(clip),
+    undo: () => scene.removeClip('c1')
+  });
+  assert.strictEqual(scene.clips.length, 1);
+  history.undo();
+  assert.strictEqual(scene.clips.length, 0);
+  history.redo();
+  assert.strictEqual(scene.clips.length, 1);
+
+  // 2. Add sequence item undo/redo
+  const seqItem = { id: 's1', clipId: 'c1', targetNodeId: 'n1', startFrame: 0, durationFrames: 30 };
+  history.execute({
+    name: 'Add Sequence Item',
+    execute: () => scene.addSequenceItem(seqItem),
+    undo: () => scene.removeSequenceItem('s1')
+  });
+  assert.strictEqual(scene.sequence.length, 1);
+  history.undo();
+  assert.strictEqual(scene.sequence.length, 0);
+  history.redo();
+  assert.strictEqual(scene.sequence.length, 1);
+});
+
+test('BETA-UI-6.22: Determinism', () => {
+  const scenePath = path.join(__dirname, '../project/screens/AdvancedAnimation.json');
+  const sceneData = JSON.parse(fs.readFileSync(scenePath, 'utf8'));
+
+  const export1 = SceneCppExporter.export(sceneData);
+  const export2 = SceneCppExporter.export(sceneData);
+
+  assert.strictEqual(export1.dataHpp, export2.dataHpp);
+  assert.strictEqual(export1.dataCpp, export2.dataCpp);
+  assert.strictEqual(export1.timelineHpp, export2.timelineHpp);
+  assert.strictEqual(export1.timelineCpp, export2.timelineCpp);
+});
+
+test('BETA-UI-6.23: No document mutation during preview', () => {
+  const scenePath = path.join(__dirname, '../project/screens/AdvancedAnimation.json');
+  const sceneData = JSON.parse(fs.readFileSync(scenePath, 'utf8'));
+  const originalJson = JSON.stringify(sceneData);
+
+  // Evaluate across entire duration
+  for (let f = 0; f <= sceneData.durationFrames; f++) {
+    TimelineEvaluator.evaluateScene(sceneData, f);
+  }
+
+  const afterEvalJson = JSON.stringify(sceneData);
+  assert.strictEqual(afterEvalJson, originalJson, 'Document JSON must remain completely unmutated after evaluation');
+});
+
+test('BETA-UI-6.24: CI regression', () => {
+  // 1. Assert AdvancedAnimation passes full SceneValidator
+  const scenePath = path.join(__dirname, '../project/screens/AdvancedAnimation.json');
+  const sceneData = JSON.parse(fs.readFileSync(scenePath, 'utf8'));
+  assert.doesNotThrow(() => {
+    SceneValidator.assertValid(sceneData);
+  }, 'AdvancedAnimation scene must pass strict SceneValidator validation');
+
+  // 2. Strict gameplay guardrail: BattleEngine, BattleSession, BattleState remain intact
+  assert.ok(BattleEngine, 'BattleEngine must exist');
+  assert.ok(BattleSession, 'BattleSession must exist');
+  assert.ok(BattleState, 'BattleState must exist');
+  assert.strictEqual(typeof BattleEngine.prototype.executeCommand, 'function', 'BattleEngine.executeCommand remains unchanged');
 });
 
 let blocked = 0;

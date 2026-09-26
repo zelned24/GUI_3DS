@@ -71,7 +71,57 @@ void SceneTimeline::togglePlay() {
 // -------------------------------------------------------------
 // PURE MATHEMATICAL INTERPOLATION (Identical to JS Interpolation.js)
 // -------------------------------------------------------------
-float SceneTimeline::evaluateProgress(float t, InterpolationType type) {
+float SceneTimeline::evaluateBezier(float t, float x1, float y1, float x2, float y2) {
+    if (t <= 0.0f) return 0.0f;
+    if (t >= 1.0f) return 1.0f;
+
+    auto sampleX = [x1, x2](float u) -> float {
+        const float oneMinusU = 1.0f - u;
+        return 3.0f * oneMinusU * oneMinusU * u * x1 + 3.0f * oneMinusU * u * u * x2 + u * u * u;
+    };
+
+    auto sampleXDerivative = [x1, x2](float u) -> float {
+        const float oneMinusU = 1.0f - u;
+        return 3.0f * oneMinusU * oneMinusU * x1 + 6.0f * oneMinusU * u * (x2 - x1) + 3.0f * u * u * (1.0f - x2);
+    };
+
+    auto sampleY = [y1, y2](float u) -> float {
+        const float oneMinusU = 1.0f - u;
+        return 3.0f * oneMinusU * oneMinusU * u * y1 + 3.0f * oneMinusU * u * u * y2 + u * u * u;
+    };
+
+    float u = t;
+    for (int i = 0; i < 8; ++i) {
+        const float x = sampleX(u) - t;
+        if (std::fabs(x) < 1e-6f) {
+            return sampleY(u);
+        }
+        const float d = sampleXDerivative(u);
+        if (std::fabs(d) < 1e-6f) break;
+        u = u - x / d;
+        if (u < 0.0f || u > 1.0f) break;
+    }
+
+    float low = 0.0f;
+    float high = 1.0f;
+    u = t;
+    for (int i = 0; i < 12; ++i) {
+        const float x = sampleX(u);
+        if (std::fabs(x - t) < 1e-5f) {
+            return sampleY(u);
+        }
+        if (x > t) {
+            high = u;
+        } else {
+            low = u;
+        }
+        u = 0.5f * (low + high);
+    }
+
+    return sampleY(u);
+}
+
+float SceneTimeline::evaluateProgress(float t, InterpolationType type, float cp1x, float cp1y, float cp2x, float cp2y) {
     const float clampedT = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
 
     switch (type) {
@@ -94,6 +144,9 @@ float SceneTimeline::evaluateProgress(float t, InterpolationType type) {
             return clampedT < 0.5f
                 ? 2.0f * clampedT * clampedT
                 : -1.0f + (4.0f - 2.0f * clampedT) * clampedT;
+
+        case InterpolationType::Bezier:
+            return evaluateBezier(clampedT, cp1x, cp1y, cp2x, cp2y);
 
         default:
             return clampedT;
@@ -131,7 +184,50 @@ float SceneTimeline::evaluateTrack(const SceneTrack& track, uint32_t frame, floa
             }
 
             const float t = static_cast<float>(frame - k0.frame) / static_cast<float>(k1.frame - k0.frame);
-            const float progress = evaluateProgress(t, k0.interpolation);
+            const float progress = evaluateProgress(t, k0.interpolation, k0.cp1x, k0.cp1y, k0.cp2x, k0.cp2y);
+
+            if (track.propertyId == PropertyId::Visible) {
+                return progress < 0.5f ? k0.value : k1.value;
+            }
+
+            return k0.value + (k1.value - k0.value) * progress;
+        }
+    }
+
+    return last.value;
+}
+
+float SceneTimeline::evaluateClipTrack(const SceneClipTrack& track, uint32_t frame, float defaultValue) {
+    if (track.keyframeCount == 0 || track.keyframes == nullptr) {
+        return defaultValue;
+    }
+
+    if (track.keyframeCount == 1) {
+        return track.keyframes[0].value;
+    }
+
+    // Before or at first keyframe
+    if (frame <= track.keyframes[0].frame) {
+        return track.keyframes[0].value;
+    }
+
+    // After or at last keyframe
+    const SceneKeyframe& last = track.keyframes[track.keyframeCount - 1];
+    if (frame >= last.frame) {
+        return last.value;
+    }
+
+    for (uint16_t i = 0; i < track.keyframeCount - 1; ++i) {
+        const SceneKeyframe& k0 = track.keyframes[i];
+        const SceneKeyframe& k1 = track.keyframes[i + 1];
+
+        if (frame >= k0.frame && frame <= k1.frame) {
+            if (k0.frame == k1.frame) {
+                return k0.value;
+            }
+
+            const float t = static_cast<float>(frame - k0.frame) / static_cast<float>(k1.frame - k0.frame);
+            const float progress = evaluateProgress(t, k0.interpolation, k0.cp1x, k0.cp1y, k0.cp2x, k0.cp2y);
 
             if (track.propertyId == PropertyId::Visible) {
                 return progress < 0.5f ? k0.value : k1.value;
@@ -159,7 +255,71 @@ void SceneTimeline::evaluateNodeLocal(uint32_t nodeIndex, uint32_t frame, Evalua
     outTransform.opacity = node.opacity;
     outVisible = node.visible;
 
-    // Evaluate all active tracks targeting this node
+    // 1. Evaluate sequencer clips placed on timeline targeting this node
+    if (m_scene.sequenceCount > 0 && m_scene.sequence != nullptr && m_scene.clipCount > 0 && m_scene.clips != nullptr) {
+        for (uint16_t s = 0; s < m_scene.sequenceCount; ++s) {
+            const SceneSequenceItem& seq = m_scene.sequence[s];
+            if (seq.muted) continue;
+
+            const char* targetId = (seq.targetNodeId && seq.targetNodeId[0] != '\0') ? seq.targetNodeId : nullptr;
+            if (!targetId || std::strcmp(targetId, node.id) != 0) continue;
+
+            const int32_t start = seq.startFrame;
+            const int32_t dur = static_cast<int32_t>(seq.durationFrames);
+            const int32_t cur = static_cast<int32_t>(frame);
+            if (cur < start || cur > (start + dur)) continue;
+
+            // Find clip
+            const SceneClip* clip = nullptr;
+            for (uint16_t c = 0; c < m_scene.clipCount; ++c) {
+                if (std::strcmp(m_scene.clips[c].id, seq.clipId) == 0) {
+                    clip = &m_scene.clips[c];
+                    break;
+                }
+            }
+            if (!clip || clip->trackCount == 0 || clip->tracks == nullptr || clip->durationFrames == 0) continue;
+
+            int32_t offset = cur - start + static_cast<int32_t>(seq.trimStart);
+            if (seq.loopCount > 1) {
+                offset = offset % static_cast<int32_t>(clip->durationFrames);
+            }
+            if (offset < 0) offset = 0;
+            if (offset > static_cast<int32_t>(clip->durationFrames)) offset = static_cast<int32_t>(clip->durationFrames);
+
+            for (uint16_t t = 0; t < clip->trackCount; ++t) {
+                const SceneClipTrack& cTrack = clip->tracks[t];
+                switch (cTrack.propertyId) {
+                    case PropertyId::X:
+                        outTransform.x = evaluateClipTrack(cTrack, static_cast<uint32_t>(offset), outTransform.x);
+                        break;
+                    case PropertyId::Y:
+                        outTransform.y = evaluateClipTrack(cTrack, static_cast<uint32_t>(offset), outTransform.y);
+                        break;
+                    case PropertyId::ScaleX:
+                        outTransform.scaleX = evaluateClipTrack(cTrack, static_cast<uint32_t>(offset), outTransform.scaleX);
+                        break;
+                    case PropertyId::ScaleY:
+                        outTransform.scaleY = evaluateClipTrack(cTrack, static_cast<uint32_t>(offset), outTransform.scaleY);
+                        break;
+                    case PropertyId::Rotation:
+                        outTransform.rotation = evaluateClipTrack(cTrack, static_cast<uint32_t>(offset), outTransform.rotation);
+                        break;
+                    case PropertyId::Opacity:
+                        outTransform.opacity = evaluateClipTrack(cTrack, static_cast<uint32_t>(offset), outTransform.opacity);
+                        if (outTransform.opacity < 0.0f) outTransform.opacity = 0.0f;
+                        if (outTransform.opacity > 1.0f) outTransform.opacity = 1.0f;
+                        break;
+                    case PropertyId::Visible:
+                        outVisible = evaluateClipTrack(cTrack, static_cast<uint32_t>(offset), outVisible ? 1.0f : 0.0f) >= 0.5f;
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+    }
+
+    // 2. Evaluate direct tracks on the scene targeting this node (layering / overriding)
     for (uint16_t t = 0; t < m_scene.trackCount; ++t) {
         const SceneTrack& track = m_scene.tracks[t];
         if (track.nodeHash != node.idHash) continue;

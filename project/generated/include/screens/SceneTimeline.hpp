@@ -39,8 +39,10 @@ public:
     bool isLooping() const { return m_isLooping; }
 
     // Pure mathematical evaluation matching TimelineEvaluator.js
-    static float evaluateProgress(float t, InterpolationType type);
+    static float evaluateBezier(float t, float x1, float y1, float x2, float y2);
+    static float evaluateProgress(float t, InterpolationType type, float cp1x = 0.25f, float cp1y = 0.1f, float cp2x = 0.25f, float cp2y = 1.0f);
     static float evaluateTrack(const SceneTrack& track, uint32_t frame, float defaultValue);
+    static float evaluateClipTrack(const SceneClipTrack& track, uint32_t frame, float defaultValue);
 
     // Node evaluation (local overrides at frame)
     void evaluateNodeLocal(uint32_t nodeIndex, uint32_t frame, EvaluatedTransform& outTransform, bool& outVisible) const;

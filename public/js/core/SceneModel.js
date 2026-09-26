@@ -1,6 +1,7 @@
 import { ComponentRegistry } from '../components/ComponentRegistry.js';
 import { globalRNG } from './DeterministicRNG.js';
 import { AnimationTrack } from '../animation/AnimationTrack.js';
+import { AnimationClip } from '../animation/AnimationClip.js';
 import { TimelineEvaluator } from '../animation/TimelineEvaluator.js';
 
 /**
@@ -21,7 +22,7 @@ export class SceneModel {
    * @param {Object} data 
    */
   constructor(data = {}) {
-    this.schemaVersion = data.schemaVersion || 2;
+    this.schemaVersion = data.schemaVersion || ((Array.isArray(data.clips) && data.clips.length > 0) || (Array.isArray(data.sequence) && data.sequence.length > 0) ? 3 : 2);
     this.id = data.id || globalRNG.nextId('scene');
     this.name = data.name || this.id;
     this.durationFrames = Math.max(1, Math.round(data.durationFrames ?? 60));
@@ -75,6 +76,34 @@ export class SceneModel {
       volume: Math.max(0, Math.min(1, parseFloat(c.volume ?? 1.0))),
       channel: Math.max(0, Math.round(c.channel ?? 0))
     })) : [];
+
+    // Animation clips (reusable assets)
+    this.clips = [];
+    if (Array.isArray(data.clips)) {
+      for (const c of data.clips) {
+        if (c instanceof AnimationClip) {
+          this.clips.push(c);
+        } else {
+          this.clips.push(new AnimationClip(c));
+        }
+      }
+    }
+
+    // Sequencer items (instances of clips placed on the timeline)
+    this.sequence = [];
+    if (Array.isArray(data.sequence)) {
+      for (const s of data.sequence) {
+        this.sequence.push({
+          id: s.id || globalRNG.nextId('seq'),
+          clipId: s.clipId || '',
+          targetNodeId: s.targetNodeId || '',
+          startFrame: Math.max(0, Math.round(s.startFrame ?? 0)),
+          durationFrames: Math.max(1, Math.round(s.durationFrames ?? 30)),
+          clipStartOffset: Math.max(0, Math.round(s.clipStartOffset ?? 0)),
+          loopCount: Math.max(1, Math.round(s.loopCount ?? 1))
+        });
+      }
+    }
 
     // Metadata
     this.metadata = {
@@ -349,15 +378,24 @@ export class SceneModel {
 
   /**
    * Adds a timeline marker.
-   * @param {Object} marker 
+   * @param {Object|number} markerOrFrame 
+   * @param {string} [name]
+   * @param {string} [type]
+   * @param {Object} [metadata]
    */
-  addMarker(marker) {
+  addMarker(markerOrFrame, name, type, metadata) {
+    let mObj;
+    if (typeof markerOrFrame === 'object' && markerOrFrame !== null) {
+      mObj = markerOrFrame;
+    } else {
+      mObj = { frame: markerOrFrame, name, type, metadata };
+    }
     const m = {
-      id: marker.id || globalRNG.nextId('marker'),
-      frame: Math.max(0, Math.round(marker.frame ?? 0)),
-      name: marker.name || 'Marker',
-      type: marker.type || 'Event',
-      metadata: { ...(marker.metadata || {}) }
+      id: mObj.id || globalRNG.nextId('marker'),
+      frame: Math.max(0, Math.round(mObj.frame ?? 0)),
+      name: mObj.name || 'Marker',
+      type: mObj.type || 'Event',
+      metadata: { ...(mObj.metadata || {}) }
     };
     this.markers.push(m);
     this.markers.sort((a, b) => a.frame - b.frame);
@@ -366,19 +404,159 @@ export class SceneModel {
 
   /**
    * Adds an audio cue.
-   * @param {Object} cue 
+   * @param {Object|number} cueOrFrame 
+   * @param {string} [asset]
+   * @param {number} [volume]
+   * @param {number} [channel]
    */
-  addAudioCue(cue) {
+  addAudioCue(cueOrFrame, asset, volume, channel) {
+    let cObj;
+    if (typeof cueOrFrame === 'object' && cueOrFrame !== null) {
+      cObj = cueOrFrame;
+    } else {
+      cObj = { frame: cueOrFrame, asset, volume, channel };
+    }
     const c = {
-      id: cue.id || globalRNG.nextId('cue'),
-      asset: cue.asset || '',
-      frame: Math.max(0, Math.round(cue.frame ?? 0)),
-      volume: Math.max(0, Math.min(1, parseFloat(cue.volume ?? 1.0))),
-      channel: Math.max(0, Math.round(cue.channel ?? 0))
+      id: cObj.id || globalRNG.nextId('cue'),
+      asset: cObj.asset || '',
+      frame: Math.max(0, Math.round(cObj.frame ?? 0)),
+      volume: Math.max(0, Math.min(1, parseFloat(cObj.volume ?? 1.0))),
+      channel: Math.max(0, Math.round(cObj.channel ?? 0))
     };
     this.audioCues.push(c);
     this.audioCues.sort((a, b) => a.frame - b.frame);
     return c;
+  }
+
+  // --- Clips & Sequencer ---
+  addClip(clip) {
+    const c = clip instanceof AnimationClip ? clip : new AnimationClip(clip);
+    this.clips.push(c);
+    return c;
+  }
+
+  getClip(clipId) {
+    return this.clips.find(c => c.id === clipId) || null;
+  }
+
+  removeClip(clipId) {
+    const idx = this.clips.findIndex(c => c.id === clipId);
+    if (idx !== -1) {
+      this.clips.splice(idx, 1);
+      this.sequence = this.sequence.filter(s => s.clipId !== clipId);
+      return true;
+    }
+    return false;
+  }
+
+  addSequenceItem(item) {
+    const s = {
+      id: item.id || globalRNG.nextId('seq'),
+      clipId: item.clipId || '',
+      targetNodeId: item.targetNodeId || '',
+      startFrame: Math.max(0, Math.round(item.startFrame ?? 0)),
+      durationFrames: Math.max(1, Math.round(item.durationFrames ?? 30)),
+      clipStartOffset: Math.max(0, Math.round(item.clipStartOffset ?? 0)),
+      loopCount: Math.max(1, Math.round(item.loopCount ?? 1))
+    };
+    this.sequence.push(s);
+    this.sequence.sort((a, b) => a.startFrame - b.startFrame);
+    return s;
+  }
+
+  getSequenceItem(itemId) {
+    return this.sequence.find(s => s.id === itemId) || null;
+  }
+
+  removeSequenceItem(itemId) {
+    const idx = this.sequence.findIndex(s => s.id === itemId);
+    if (idx !== -1) {
+      this.sequence.splice(idx, 1);
+      return true;
+    }
+    return false;
+  }
+
+  moveSequenceItem(itemId, newStartFrame) {
+    const item = this.getSequenceItem(itemId);
+    if (!item) return false;
+    item.startFrame = Math.max(0, Math.round(newStartFrame));
+    this.sequence.sort((a, b) => a.startFrame - b.startFrame);
+    return true;
+  }
+
+  trimSequenceItem(itemId, newStartFrame, newDurationFrames, newOffset = 0) {
+    const item = this.getSequenceItem(itemId);
+    if (!item) return false;
+    item.startFrame = Math.max(0, Math.round(newStartFrame));
+    item.durationFrames = Math.max(1, Math.round(newDurationFrames));
+    item.clipStartOffset = Math.max(0, Math.round(newOffset));
+    return true;
+  }
+
+  // --- Markers & Audio Cues Authoring ---
+  updateMarker(idOrIndex, updates = {}) {
+    const m = typeof idOrIndex === 'number'
+      ? this.markers[idOrIndex]
+      : this.markers.find(marker => marker.id === idOrIndex);
+    if (!m) return false;
+    if (updates.frame !== undefined) m.frame = Math.max(0, Math.round(updates.frame));
+    if (updates.name !== undefined) m.name = updates.name;
+    if (updates.type !== undefined) m.type = updates.type;
+    if (updates.metadata) m.metadata = { ...m.metadata, ...updates.metadata };
+    this.markers.sort((a, b) => a.frame - b.frame);
+    return true;
+  }
+
+  deleteMarker(idOrIndex) {
+    let idx = -1;
+    if (typeof idOrIndex === 'number') {
+      if (idOrIndex >= 0 && idOrIndex < this.markers.length) idx = idOrIndex;
+    } else {
+      idx = this.markers.findIndex(m => m.id === idOrIndex);
+    }
+    if (idx !== -1) {
+      this.markers.splice(idx, 1);
+      return true;
+    }
+    return false;
+  }
+
+  updateAudioCue(idOrIndex, updates = {}) {
+    const c = typeof idOrIndex === 'number'
+      ? this.audioCues[idOrIndex]
+      : this.audioCues.find(cue => cue.id === idOrIndex);
+    if (!c) return false;
+    if (updates.frame !== undefined) c.frame = Math.max(0, Math.round(updates.frame));
+    if (updates.asset !== undefined) c.asset = updates.asset;
+    if (updates.volume !== undefined) c.volume = Math.max(0, Math.min(1, parseFloat(updates.volume)));
+    if (updates.channel !== undefined) c.channel = Math.max(0, Math.round(updates.channel));
+    this.audioCues.sort((a, b) => a.frame - b.frame);
+    return true;
+  }
+
+  deleteAudioCue(idOrIndex) {
+    let idx = -1;
+    if (typeof idOrIndex === 'number') {
+      if (idOrIndex >= 0 && idOrIndex < this.audioCues.length) idx = idOrIndex;
+    } else {
+      idx = this.audioCues.findIndex(c => c.id === idOrIndex);
+    }
+    if (idx !== -1) {
+      this.audioCues.splice(idx, 1);
+      return true;
+    }
+    return false;
+  }
+
+  // --- Backward-Compatible Migration ---
+  static migrateV2ToV3(data) {
+    if (!data) return data;
+    const migrated = { ...data };
+    migrated.schemaVersion = 3;
+    if (!Array.isArray(migrated.clips)) migrated.clips = [];
+    if (!Array.isArray(migrated.sequence)) migrated.sequence = [];
+    return migrated;
   }
 
   /**
@@ -405,6 +583,8 @@ export class SceneModel {
       },
       nodes: this.nodes.map(n => (typeof n.toJSON === 'function' ? n.toJSON() : n)),
       tracks: this.tracks.map(t => (typeof t.toJSON === 'function' ? t.toJSON() : t)),
+      clips: this.clips.map(c => (typeof c.toJSON === 'function' ? c.toJSON() : c)),
+      sequence: [...this.sequence],
       markers: [...this.markers],
       audioCues: [...this.audioCues],
       metadata: { ...this.metadata }
@@ -412,11 +592,15 @@ export class SceneModel {
   }
 
   /**
-   * Instantiates a SceneModel from JSON data.
+   * Instantiates a SceneModel from JSON data with backward compatibility.
    * @param {Object} json 
    * @returns {SceneModel}
    */
   static fromJSON(json) {
-    return new SceneModel(json);
+    if (!json) return new SceneModel();
+    const data = { ...json };
+    if (!Array.isArray(data.clips)) data.clips = [];
+    if (!Array.isArray(data.sequence)) data.sequence = [];
+    return new SceneModel(data);
   }
 }

@@ -21,7 +21,8 @@ enum class InterpolationType : uint8_t {
     Linear = 1,
     EaseIn = 2,
     EaseOut = 3,
-    EaseInOut = 4
+    EaseInOut = 4,
+    Bezier = 5
 };
 
 enum class ScreenTarget : uint8_t {
@@ -43,6 +44,10 @@ struct SceneKeyframe {
     uint16_t frame;
     float value;
     InterpolationType interpolation;
+    float cp1x;
+    float cp1y;
+    float cp2x;
+    float cp2y;
 };
 
 struct SceneTrack {
@@ -51,6 +56,33 @@ struct SceneTrack {
     PropertyId propertyId;
     uint16_t keyframeCount;
     const SceneKeyframe* keyframes;
+};
+
+struct SceneClipTrack {
+    const char* targetNodeId;
+    PropertyId propertyId;
+    uint16_t keyframeCount;
+    const SceneKeyframe* keyframes;
+};
+
+struct SceneClip {
+    const char* id;
+    const char* name;
+    uint16_t durationFrames;
+    uint16_t trackCount;
+    const SceneClipTrack* tracks;
+};
+
+struct SceneSequenceItem {
+    const char* id;
+    const char* clipId;
+    const char* targetNodeId;
+    uint32_t nodeHash;
+    int32_t startFrame;
+    uint16_t durationFrames;
+    uint16_t trimStart;
+    uint16_t loopCount;
+    bool muted;
 };
 
 struct SceneMarker {
@@ -105,6 +137,11 @@ struct SceneDefinition {
     const SceneMarker* markers;
     uint16_t audioCueCount;
     const SceneAudioCue* audioCues;
+    // BETA-UI-6: Clips & Sequence
+    uint16_t clipCount;
+    const SceneClip* clips;
+    uint16_t sequenceCount;
+    const SceneSequenceItem* sequence;
 };
 
 extern const SceneDefinition g_SceneDefinition;

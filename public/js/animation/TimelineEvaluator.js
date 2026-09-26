@@ -1,4 +1,6 @@
 import { Transform } from '../core/Transform.js';
+import { AnimationTrack } from './AnimationTrack.js';
+import { AnimationClip } from './AnimationClip.js';
 
 /**
  * TimelineEvaluator - Evaluates animation tracks for a given frame without mutating document state.
@@ -12,7 +14,7 @@ export class TimelineEvaluator {
    */
   static evaluateTrack(track, frame) {
     if (!track) return null;
-    return track.evaluate(frame);
+    return typeof track.evaluate === 'function' ? track.evaluate(frame) : new AnimationTrack(track).evaluate(frame);
   }
 
   /**
@@ -25,33 +27,82 @@ export class TimelineEvaluator {
    */
   static evaluateScene(scene, frame) {
     const evaluatedMap = new Map();
-    if (!scene || !Array.isArray(scene.tracks)) {
-      return evaluatedMap;
-    }
+    if (!scene) return evaluatedMap;
 
     const intFrame = Math.max(0, Math.round(frame));
-    const tracks = scene.tracks;
 
-    // Check if any track is soloed
-    const hasSolo = tracks.some(t => t.solo);
+    // 1. Evaluate sequencer clips placed on timeline
+    if (Array.isArray(scene.sequence)) {
+      for (const seqItem of scene.sequence) {
+        if (seqItem.muted) continue;
+        const start = seqItem.startFrame ?? 0;
+        const dur = seqItem.durationFrames ?? 30;
+        if (intFrame < start || intFrame > start + dur) continue;
 
-    for (const track of tracks) {
-      if (track.muted) continue;
-      if (hasSolo && !track.solo) continue;
+        let clip = null;
+        if (typeof scene.getClip === 'function') {
+          clip = scene.getClip(seqItem.clipId);
+        } else if (Array.isArray(scene.clips)) {
+          const raw = scene.clips.find(c => c.id === seqItem.clipId);
+          clip = raw ? (raw instanceof AnimationClip ? raw : AnimationClip.fromJSON(raw)) : null;
+        }
+        if (!clip || !Array.isArray(clip.tracks) || clip.durationFrames <= 0) continue;
 
-      const evaluatedValue = track.evaluate(intFrame);
-      if (evaluatedValue === null || evaluatedValue === undefined) continue;
+        let offset = intFrame - start + (seqItem.clipStartOffset || 0);
+        if (seqItem.loopCount > 1 || clip.loop) {
+          offset = offset % clip.durationFrames;
+        }
+        const localFrame = Math.max(0, Math.min(clip.durationFrames, Math.round(offset)));
 
-      if (!evaluatedMap.has(track.targetNodeId)) {
-        evaluatedMap.set(track.targetNodeId, {
-          transform: {},
-          properties: {},
-          visible: undefined
-        });
+        for (const clipTrack of clip.tracks) {
+          if (clipTrack.muted) continue;
+          const evaluatedValue = typeof clipTrack.evaluate === 'function'
+            ? clipTrack.evaluate(localFrame)
+            : new AnimationTrack(clipTrack).evaluate(localFrame);
+          if (evaluatedValue === null || evaluatedValue === undefined) continue;
+
+          const targetNodeId = seqItem.targetNodeId || clipTrack.targetNodeId;
+          if (!targetNodeId || targetNodeId === '__target__') continue;
+
+          if (!evaluatedMap.has(targetNodeId)) {
+            evaluatedMap.set(targetNodeId, {
+              transform: {},
+              properties: {},
+              visible: undefined
+            });
+          }
+
+          const nodeEval = evaluatedMap.get(targetNodeId);
+          this._applyPropertyPath(nodeEval, clipTrack.propertyPath, evaluatedValue);
+        }
       }
+    }
 
-      const nodeEval = evaluatedMap.get(track.targetNodeId);
-      this._applyPropertyPath(nodeEval, track.propertyPath, evaluatedValue);
+    // 2. Evaluate direct tracks on the scene (overrides/layers on sequence)
+    if (Array.isArray(scene.tracks)) {
+      const tracks = scene.tracks;
+      const hasSolo = tracks.some(t => t.solo);
+
+      for (const track of tracks) {
+        if (track.muted) continue;
+        if (hasSolo && !track.solo) continue;
+
+        const evaluatedValue = typeof track.evaluate === 'function'
+          ? track.evaluate(intFrame)
+          : new AnimationTrack(track).evaluate(intFrame);
+        if (evaluatedValue === null || evaluatedValue === undefined) continue;
+
+        if (!evaluatedMap.has(track.targetNodeId)) {
+          evaluatedMap.set(track.targetNodeId, {
+            transform: {},
+            properties: {},
+            visible: undefined
+          });
+        }
+
+        const nodeEval = evaluatedMap.get(track.targetNodeId);
+        this._applyPropertyPath(nodeEval, track.propertyPath, evaluatedValue);
+      }
     }
 
     return evaluatedMap;
@@ -62,19 +113,20 @@ export class TimelineEvaluator {
    */
   static _applyPropertyPath(targetState, path, value) {
     if (path === 'opacity' || path === 'transform.opacity') {
-      targetState.opacity = value;
-      targetState.transform.opacity = value;
+      const clamped = Math.max(0.0, Math.min(1.0, Number(value)));
+      targetState.opacity = clamped;
+      targetState.transform.opacity = clamped;
       return;
     }
 
     if (path.startsWith('transform.')) {
       const prop = path.replace('transform.', '');
-      targetState.transform[prop] = value;
+      targetState.transform[prop] = Number(value);
       return;
     }
 
     if (path === 'x' || path === 'y' || path === 'scaleX' || path === 'scaleY' || path === 'rotation') {
-      targetState.transform[path] = value;
+      targetState.transform[path] = Number(value);
       return;
     }
 

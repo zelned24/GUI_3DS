@@ -42,6 +42,11 @@ struct RuntimeMetrics {
     uint32_t drawCallCount;
     uint32_t activeNodeCount;
     uint32_t activeTrackCount;
+    // BETA-UI-6: Extended metrics
+    uint32_t activeClips;
+    uint32_t evaluatedTracks;
+    uint32_t curveEvaluations;
+    uint32_t sequencerSegments;
 };
 
 class RuntimeAssetManager {
@@ -78,6 +83,12 @@ public:
     void recordActiveCounts(uint32_t nodes, uint32_t tracks) {
         m_metrics.activeNodeCount = nodes;
         m_metrics.activeTrackCount = tracks;
+    }
+    void recordTimelineMetrics(uint32_t activeClips, uint32_t evaluatedTracks, uint32_t curveEvaluations, uint32_t sequencerSegments) {
+        m_metrics.activeClips = activeClips;
+        m_metrics.evaluatedTracks = evaluatedTracks;
+        m_metrics.curveEvaluations = curveEvaluations;
+        m_metrics.sequencerSegments = sequencerSegments;
     }
 
     size_t getCachedCount() const { return m_cache.size(); }

@@ -1,0 +1,192 @@
+{
+  "schemaVersion": 3,
+  "id": "AdvancedAnimation",
+  "name": "Advanced Animation Demo",
+  "fps": 60,
+  "durationFrames": 90,
+  "currentFrame": 0,
+  "top": {
+    "width": 400,
+    "height": 240,
+    "backgroundColor": "#12141c"
+  },
+  "bottom": {
+    "width": 320,
+    "height": 240,
+    "backgroundColor": "#1a1824"
+  },
+  "components": [
+    {
+      "id": "bg_arena",
+      "type": "Image",
+      "screen": "top",
+      "x": 0,
+      "y": 0,
+      "width": 400,
+      "height": 240,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 1,
+      "parent": null,
+      "properties": {
+        "asset": "bg_arena_plains",
+        "fit": "stretch"
+      }
+    },
+    {
+      "id": "pikachu_sprite",
+      "type": "PokemonSprite",
+      "screen": "top",
+      "x": 350,
+      "y": 60,
+      "width": 112,
+      "height": 112,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 2,
+      "parent": null,
+      "properties": {
+        "species": "Pikachu",
+        "nationalDexId": 25,
+        "facing": "front",
+        "shiny": false
+      },
+      "opacity": 0
+    },
+    {
+      "id": "title_banner",
+      "type": "PixelText",
+      "screen": "top",
+      "x": 20,
+      "y": 20,
+      "width": 360,
+      "height": 32,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 3,
+      "parent": null,
+      "properties": {
+        "text": "BETA-UI-6 ADVANCED ANIMATION",
+        "fontSize": 14,
+        "color": "#ffcb05",
+        "align": "center"
+      }
+    },
+    {
+      "id": "touch_panel",
+      "type": "RogueBox",
+      "screen": "bottom",
+      "x": 10,
+      "y": 30,
+      "width": 300,
+      "height": 180,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 1,
+      "parent": null,
+      "properties": {
+        "backgroundColor": "#202636"
+      }
+    },
+    {
+      "id": "touch_button",
+      "type": "TouchButton",
+      "screen": "bottom",
+      "x": 60,
+      "y": 90,
+      "width": 200,
+      "height": 50,
+      "visible": true,
+      "enabled": true,
+      "zIndex": 2,
+      "parent": "touch_panel",
+      "properties": {
+        "label": "BATTLE START",
+        "backgroundColor": "#3a4c6a"
+      }
+    }
+  ],
+  "tracks": [
+    {
+      "id": "track_title_y",
+      "targetNodeId": "title_banner",
+      "propertyPath": "transform.y",
+      "displayName": "title_banner.Position Y",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 0, "value": -40, "interpolation": "bezier", "curve": { "mode": "bezier", "cp1": [0.42, 0.0], "cp2": [0.58, 1.0] } },
+        { "frame": 25, "value": 20, "interpolation": "linear" }
+      ]
+    },
+    {
+      "id": "track_btn_scale",
+      "targetNodeId": "touch_button",
+      "propertyPath": "transform.scaleX",
+      "displayName": "touch_button.Scale X",
+      "valueType": "number",
+      "muted": false,
+      "solo": false,
+      "keyframes": [
+        { "frame": 30, "value": 0.5, "interpolation": "bezier", "curve": { "mode": "bezier", "cp1": [0.34, 1.56], "cp2": [0.64, 1.0] } },
+        { "frame": 50, "value": 1.0, "interpolation": "linear" }
+      ]
+    }
+  ],
+  "clips": [
+    {
+      "id": "clip_fade_slide",
+      "name": "Fade & Slide In",
+      "durationFrames": 30,
+      "tracks": [
+        {
+          "id": "ct_opacity",
+          "targetNodeId": "__target__",
+          "propertyPath": "opacity",
+          "displayName": "Opacity",
+          "valueType": "number",
+          "muted": false,
+          "solo": false,
+          "keyframes": [
+            { "frame": 0, "value": 0, "interpolation": "linear" },
+            { "frame": 30, "value": 1, "interpolation": "linear" }
+          ]
+        },
+        {
+          "id": "ct_x",
+          "targetNodeId": "__target__",
+          "propertyPath": "transform.x",
+          "displayName": "X",
+          "valueType": "number",
+          "muted": false,
+          "solo": false,
+          "keyframes": [
+            { "frame": 0, "value": 350, "interpolation": "bezier", "curve": { "mode": "bezier", "cp1": [0.25, 0.1], "cp2": [0.25, 1.0] } },
+            { "frame": 30, "value": 220, "interpolation": "linear" }
+          ]
+        }
+      ]
+    }
+  ],
+  "sequence": [
+    {
+      "id": "seq_item_pikachu",
+      "clipId": "clip_fade_slide",
+      "targetNodeId": "pikachu_sprite",
+      "startFrame": 0,
+      "durationFrames": 30,
+      "clipStartOffset": 0,
+      "loopCount": 1,
+      "muted": false
+    }
+  ],
+  "markers": [
+    { "frame": 0, "name": "Start", "type": "Event" },
+    { "frame": 30, "name": "PikachuArrive", "type": "Event" },
+    { "frame": 45, "name": "SelectSound", "type": "Audio" }
+  ],
+  "audioCues": [
+    { "frame": 45, "asset": "audio_se_select", "volume": 0.9, "channel": 0 }
+  ]
+}

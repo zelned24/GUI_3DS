@@ -1,5 +1,7 @@
 import { AnimationTrack } from '../animation/AnimationTrack.js';
 import { Keyframe, InterpolationTypes } from '../animation/Keyframe.js';
+import { Interpolation } from '../animation/Interpolation.js';
+import { ClipLibrary } from '../animation/ClipLibrary.js';
 
 /**
  * TimelineUI - Professional 2D Scene Timeline and Playhead Editor for Nintendo 3DS.
@@ -10,7 +12,11 @@ import { Keyframe, InterpolationTypes } from '../animation/Keyframe.js';
  * - Playback Engine (Play, Pause, Stop, Loop, Speeds: 0.25x, 0.5x, 1x, 2x, 4x)
  * - Track management grouped by Scene Node (Position X/Y, Scale X/Y, Rotation, Opacity, Visibility)
  * - Keyframe manipulation (Add, Delete, Move with integer frame snapping, Selection)
- * - Interpolation curves: Step, Linear, Ease In, Ease Out, Ease In Out
+ * - Interpolation curves: Step, Linear, Ease In, Ease Out, Ease In Out, Bezier
+ * - Multi-keyframe selection & group operations (Group move, Copy, Paste, Duplicate, Delete)
+ * - Graph Editor mode for fine numeric curve & tangent handle editing
+ * - Timeline markers and audio cues authoring
+ * - Frame snapping across markers, audio cues, and keyframes
  * - Auto-Key recording toggle
  * - Undo/Redo integration with HistoryManager
  */
@@ -21,11 +27,21 @@ export class TimelineUI {
    * @param {SelectionManager} selectionManager 
    * @param {CanvasRenderer} canvasRenderer 
    */
-  constructor(containerElement, projectModel, selectionManager, canvasRenderer) {
-    this.container = containerElement;
-    this.model = projectModel;
-    this.selection = selectionManager;
-    this.renderer = canvasRenderer;
+  constructor(containerElement, projectModel, selectionManager, canvasRenderer, historyManager = null) {
+    if (containerElement && !containerElement.nodeType && typeof containerElement === 'object' && !projectModel) {
+      const opts = containerElement;
+      this.container = opts.container || null;
+      this.model = opts.projectModel || opts.sceneModel || opts.model || null;
+      this.selection = opts.selectionManager || opts.selection || null;
+      this.renderer = opts.canvasRenderer || opts.renderer || null;
+      this._historyManager = opts.historyManager || opts.history || null;
+    } else {
+      this.container = containerElement || null;
+      this.model = projectModel || null;
+      this.selection = selectionManager || null;
+      this.renderer = canvasRenderer || null;
+      this._historyManager = historyManager || null;
+    }
 
     // View & Zoom configuration
     this.pxPerFrame = 8; // Pixels per frame on the ruler
@@ -43,10 +59,17 @@ export class TimelineUI {
     this._lastPlayTimestamp = 0;
     this._fractionalFrame = 0;
 
-    // Interaction state
+    // Interaction & View state (BETA-UI-6)
+    this.viewMode = 'timeline'; // 'timeline' | 'graph'
+    this.snapEnabled = true;
+    this.clipboard = [];
     this.isScrubbing = false;
     this.draggingKeyframe = null; // { track, keyframe, startFrame, mouseStartX }
     this.selectedKeyframes = new Set(); // Set of Keyframe instances
+    this.selectedKeyframeMap = new Map(); // Keyframe -> AnimationTrack
+    this.isMarquee = false;
+    this.marqueeStart = null;
+    this.marqueeEnd = null;
 
     // Expanded nodes set
     this.expandedNodes = new Set();
@@ -56,7 +79,31 @@ export class TimelineUI {
   }
 
   get activeScene() {
-    return this.model.getActiveScreen();
+    if (!this.model) return null;
+    if (typeof this.model.getActiveScreen === 'function') {
+      return this.model.getActiveScreen();
+    }
+    if (this.model.activeScene) return this.model.activeScene;
+    if (this.model.scene) return this.model.scene;
+    return this.model;
+  }
+
+  _setupModelListeners() {
+    if (this.model && typeof this.model.on === 'function') {
+      this.model.on('sceneChanged', () => this.render());
+      this.model.on('screenChanged', () => this.render());
+    }
+  }
+
+  _pushHistory(command) {
+    const h = this._historyManager || this.model?.history;
+    if (h) {
+      if (typeof h.push === 'function') {
+        h.push(command);
+      } else if (typeof h.execute === 'function') {
+        h.execute(command);
+      }
+    }
   }
 
   _initUI() {
@@ -106,8 +153,18 @@ export class TimelineUI {
             </div>
           </div>
 
-          <!-- ZOOM & ADD TRACK -->
+          <!-- ZOOM & TOOLS & ADD TRACK -->
           <div class="tl-controls-right">
+            <div class="btn-group">
+              <button id="tl_btn_view_mode" class="tl-btn" title="Toggle Graph Editor Mode">📊 Graph</button>
+              <button id="tl_btn_snap" class="tl-btn active" title="Toggle Frame Snapping">🧲 Snap</button>
+            </div>
+            <div class="btn-group">
+              <button id="tl_btn_copy_keys" class="tl-btn" title="Copy Selected Keyframes (Ctrl+C)">📋</button>
+              <button id="tl_btn_paste_keys" class="tl-btn" title="Paste Keyframes (Ctrl+V)">📌</button>
+              <button id="tl_btn_dup_keys" class="tl-btn" title="Duplicate Selected (Ctrl+D)">⧉</button>
+              <button id="tl_btn_del_keys" class="tl-btn" title="Delete Selected Keyframes (Del)">🗑</button>
+            </div>
             <div class="btn-group">
               <button id="tl_btn_zoom_out" class="tl-btn" title="Zoom Out Timeline">−</button>
               <button id="tl_btn_zoom_fit" class="tl-btn" title="Fit Timeline to View">Fit</button>
@@ -162,22 +219,26 @@ export class TimelineUI {
   }
 
   _setupModelListeners() {
-    this.model.on('screenChanged', () => {
-      this.stop();
-      this.render();
-    });
-    this.model.on('screenLoaded', () => {
-      this.render();
-    });
-    this.model.on('componentAdded', () => {
-      this.render();
-    });
-    this.model.on('componentRemoved', () => {
-      this.render();
-    });
-    this.selection.on('selectionChanged', () => {
-      this.render();
-    });
+    if (this.model && typeof this.model.on === 'function') {
+      this.model.on('screenChanged', () => {
+        this.stop();
+        this.render();
+      });
+      this.model.on('screenLoaded', () => {
+        this.render();
+      });
+      this.model.on('componentAdded', () => {
+        this.render();
+      });
+      this.model.on('componentRemoved', () => {
+        this.render();
+      });
+    }
+    if (this.selection && typeof this.selection.on === 'function') {
+      this.selection.on('selectionChanged', () => {
+        this.render();
+      });
+    }
   }
 
   _bindControls() {
@@ -242,6 +303,43 @@ export class TimelineUI {
 
     addTrackBtn?.addEventListener('click', (e) => this._showAddTrackMenu(e));
 
+    // View Mode & Snapping & Clipboard Controls (BETA-UI-6)
+    const viewModeBtn = this.container.querySelector('#tl_btn_view_mode');
+    const snapBtn = this.container.querySelector('#tl_btn_snap');
+    const copyBtn = this.container.querySelector('#tl_btn_copy_keys');
+    const pasteBtn = this.container.querySelector('#tl_btn_paste_keys');
+    const dupBtn = this.container.querySelector('#tl_btn_dup_keys');
+    const delBtn = this.container.querySelector('#tl_btn_del_keys');
+
+    viewModeBtn?.addEventListener('click', () => {
+      this.setViewMode(this.viewMode === 'graph' ? 'timeline' : 'graph');
+    });
+
+    snapBtn?.addEventListener('click', () => {
+      this.snapEnabled = !this.snapEnabled;
+      snapBtn.classList.toggle('active', this.snapEnabled);
+    });
+
+    copyBtn?.addEventListener('click', () => this.copySelectedKeyframes());
+    pasteBtn?.addEventListener('click', () => this.pasteKeyframes());
+    dupBtn?.addEventListener('click', () => this.duplicateSelectedKeyframes());
+    delBtn?.addEventListener('click', () => this.deleteSelectedKeyframes());
+
+    // Global Keyboard Shortcuts (BETA-UI-6)
+    window.addEventListener('keydown', (e) => {
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        this.copySelectedKeyframes();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        this.pasteKeyframes();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        this.duplicateSelectedKeyframes();
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        this.deleteSelectedKeyframes();
+      }
+    });
+
     // Synchronize vertical scrolling between headers and lanes
     const headersScroll = this.container.querySelector('#tl_headers_scroll');
     const lanesScroll = this.container.querySelector('#tl_lanes_scroll');
@@ -264,7 +362,8 @@ export class TimelineUI {
       const rect = lanesScroll.getBoundingClientRect();
       const scrollX = lanesScroll.scrollLeft;
       const xInLanes = (clientX - rect.left) + scrollX;
-      const frame = Math.max(0, Math.round(xInLanes / this.pxPerFrame));
+      let frame = Math.max(0, Math.round(xInLanes / this.pxPerFrame));
+      if (this.snapEnabled) frame = this.snapFrame(frame);
       this.seek(frame);
       this.isScrubbing = true;
     };
@@ -279,26 +378,42 @@ export class TimelineUI {
         const rect = lanesScroll.getBoundingClientRect();
         const scrollX = lanesScroll.scrollLeft;
         const xInLanes = (e.clientX - rect.left) + scrollX;
-        const frame = Math.max(0, Math.round(xInLanes / this.pxPerFrame));
+        let frame = Math.max(0, Math.round(xInLanes / this.pxPerFrame));
+        if (this.snapEnabled) frame = this.snapFrame(frame);
         this.seek(frame);
         return;
       }
 
-      // Dragging a keyframe
+      // Rubber-band marquee selection
+      if (this.isMarquee && lanesCanvas) {
+        const rect = lanesCanvas.getBoundingClientRect();
+        const curX = e.clientX - rect.left;
+        const curY = e.clientY - rect.top;
+        this.marqueeEnd = { x: curX, y: curY };
+        this.selectKeyframesInRect({
+          minX: Math.min(this.marqueeStart.x, curX),
+          maxX: Math.max(this.marqueeStart.x, curX),
+          minY: Math.min(this.marqueeStart.y, curY),
+          maxY: Math.max(this.marqueeStart.y, curY)
+        });
+        this.render();
+        return;
+      }
+
+      // Dragging keyframe(s)
       if (this.draggingKeyframe && lanesScroll) {
         const rect = lanesScroll.getBoundingClientRect();
         const scrollX = lanesScroll.scrollLeft;
         const xInLanes = (e.clientX - rect.left) + scrollX;
-        const newFrame = Math.max(0, Math.round(xInLanes / this.pxPerFrame));
+        let newFrame = Math.max(0, Math.round(xInLanes / this.pxPerFrame));
+        if (this.snapEnabled) newFrame = this.snapFrame(newFrame);
         const deltaFrames = newFrame - this.draggingKeyframe.startFrame;
 
         if (deltaFrames !== 0) {
-          const { track, keyframe } = this.draggingKeyframe;
-          const oldFrame = keyframe.frame;
-          const targetFrame = Math.max(0, this.draggingKeyframe.startFrame + deltaFrames);
-
-          if (targetFrame !== oldFrame) {
-            this.moveKeyframe(track, oldFrame, targetFrame);
+          const moved = this.moveSelectedKeyframes(deltaFrames);
+          if (moved) {
+            this.draggingKeyframe.startFrame = newFrame;
+            this.seek(newFrame);
             this.render();
           }
         }
@@ -308,6 +423,12 @@ export class TimelineUI {
     window.addEventListener('mouseup', () => {
       if (this.isScrubbing) {
         this.isScrubbing = false;
+      }
+      if (this.isMarquee) {
+        this.isMarquee = false;
+        this.marqueeStart = null;
+        this.marqueeEnd = null;
+        this.render();
       }
       if (this.draggingKeyframe) {
         this.draggingKeyframe = null;
@@ -323,10 +444,16 @@ export class TimelineUI {
 
       const hit = this._hitTestKeyframe(clickX, clickY);
       if (hit) {
-        if (!e.shiftKey) {
-          this.selectedKeyframes.clear();
+        if (e.ctrlKey || e.metaKey) {
+          this.selectKeyframe(hit.track, hit.keyframe, false, true);
+        } else if (e.shiftKey) {
+          this.selectKeyframe(hit.track, hit.keyframe, true, false);
+        } else {
+          if (!this.selectedKeyframes.has(hit.keyframe)) {
+            this.selectKeyframe(hit.track, hit.keyframe, false, false);
+          }
         }
-        this.selectedKeyframes.add(hit.keyframe);
+
         this.draggingKeyframe = {
           track: hit.track,
           keyframe: hit.keyframe,
@@ -336,8 +463,14 @@ export class TimelineUI {
         this.render();
         e.stopPropagation();
       } else {
-        // Clicking on empty lane seeks playhead
-        handleScrubStart(e.clientX);
+        if (e.shiftKey || e.ctrlKey) {
+          this.isMarquee = true;
+          this.marqueeStart = { x: clickX, y: clickY };
+          this.marqueeEnd = { x: clickX, y: clickY };
+        } else {
+          this.clearKeyframeSelection();
+          handleScrubStart(e.clientX);
+        }
       }
     });
 
@@ -346,14 +479,14 @@ export class TimelineUI {
       const rect = lanesCanvas.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
       const clickY = e.clientY - rect.top;
-      const clickedFrame = Math.max(0, Math.round(clickX / this.pxPerFrame));
+      let clickedFrame = Math.max(0, Math.round(clickX / this.pxPerFrame));
+      if (this.snapEnabled) clickedFrame = this.snapFrame(clickedFrame);
 
       const track = this._getTrackAtY(clickY);
       if (track) {
         const scene = this.activeScene;
         const node = scene?.getNode(track.targetNodeId);
         if (node) {
-          // Get current property value from node
           const val = this._getNodePropertyValue(node, track.propertyPath);
           this.addKeyframe(track, clickedFrame, val);
           this.seek(clickedFrame);
@@ -497,7 +630,7 @@ export class TimelineUI {
     const kf = track.addKeyframe(frame, value, interpolation);
 
     // Push Undo command
-    this.model.history.push({
+    this._pushHistory({
       description: `Add Keyframe at frame ${frame} (${track.displayName})`,
       undo: () => {
         if (oldValue !== undefined) {
@@ -527,7 +660,7 @@ export class TimelineUI {
     track.removeKeyframe(frame);
     this.selectedKeyframes.delete(existing);
 
-    this.model.history.push({
+    this._pushHistory({
       description: `Delete Keyframe at frame ${frame} (${track.displayName})`,
       undo: () => {
         track.addKeyframe(frame, val, interp);
@@ -546,7 +679,7 @@ export class TimelineUI {
     if (!track || fromFrame === toFrame) return;
     track.moveKeyframe(fromFrame, toFrame);
 
-    this.model.history.push({
+    this._pushHistory({
       description: `Move Keyframe ${fromFrame} -> ${toFrame} (${track.displayName})`,
       undo: () => {
         track.moveKeyframe(toFrame, fromFrame);
@@ -570,7 +703,7 @@ export class TimelineUI {
 
     scene.addTrack(track);
 
-    this.model.history.push({
+    this._pushHistory({
       description: `Add Track ${track.displayName} for ${nodeId}`,
       undo: () => {
         scene.removeTrack(track.id);
@@ -595,7 +728,7 @@ export class TimelineUI {
 
     scene.removeTrack(trackId);
 
-    this.model.history.push({
+    this._pushHistory({
       description: `Delete Track ${track.displayName}`,
       undo: () => {
         scene.addTrack(track);
@@ -610,9 +743,455 @@ export class TimelineUI {
     this.render();
   }
 
+  // --- Multi-Keyframe Selection (BETA-UI-6) ---
+
+  selectKeyframe(track, keyframe, multi = false, toggle = false) {
+    if (!keyframe || !track) return;
+    if (!multi && !toggle) {
+      this.selectedKeyframes.clear();
+      this.selectedKeyframeMap.clear();
+    }
+
+    if (toggle) {
+      if (this.selectedKeyframes.has(keyframe)) {
+        this.selectedKeyframes.delete(keyframe);
+        this.selectedKeyframeMap.delete(keyframe);
+      } else {
+        this.selectedKeyframes.add(keyframe);
+        this.selectedKeyframeMap.set(keyframe, track);
+      }
+    } else {
+      this.selectedKeyframes.add(keyframe);
+      this.selectedKeyframeMap.set(keyframe, track);
+    }
+
+    this.render();
+  }
+
+  clearKeyframeSelection() {
+    this.selectedKeyframes.clear();
+    this.selectedKeyframeMap.clear();
+    this.render();
+  }
+
+  getSelectedKeyframes() {
+    return Array.from(this.selectedKeyframes);
+  }
+
+  isKeyframeSelected(track, keyframe) {
+    return this.selectedKeyframes.has(keyframe);
+  }
+
+  selectKeyframesInRect(rect) {
+    const scene = this.activeScene;
+    if (!scene) return [];
+
+    const selected = [];
+    if (rect.minFrame !== undefined && rect.maxFrame !== undefined) {
+      const minF = Math.min(rect.minFrame, rect.maxFrame);
+      const maxF = Math.max(rect.minFrame, rect.maxFrame);
+      for (const track of scene.tracks) {
+        if (rect.trackIds && !rect.trackIds.includes(track.id)) continue;
+        for (const kf of track.keyframes) {
+          if (kf.frame >= minF && kf.frame <= maxF) {
+            this.selectedKeyframes.add(kf);
+            this.selectedKeyframeMap.set(kf, track);
+            selected.push(kf);
+          }
+        }
+      }
+    } else if (rect.minX !== undefined && rect.maxX !== undefined) {
+      let currentY = 0;
+      const tracksByNode = new Map();
+      for (const track of scene.tracks) {
+        if (!tracksByNode.has(track.targetNodeId)) tracksByNode.set(track.targetNodeId, []);
+        tracksByNode.get(track.targetNodeId).push(track);
+      }
+
+      for (const [nodeId, tracks] of tracksByNode.entries()) {
+        currentY += this.rowHeight;
+        if (this.expandedNodes.has(nodeId)) {
+          for (const track of tracks) {
+            const laneY = currentY + this.rowHeight / 2;
+            if (laneY >= rect.minY && laneY <= rect.maxY) {
+              for (const kf of track.keyframes) {
+                const kx = kf.frame * this.pxPerFrame;
+                if (kx >= rect.minX && kx <= rect.maxX) {
+                  this.selectedKeyframes.add(kf);
+                  this.selectedKeyframeMap.set(kf, track);
+                  selected.push(kf);
+                }
+              }
+            }
+            currentY += this.rowHeight;
+          }
+        }
+      }
+    }
+
+    this.render();
+    return selected;
+  }
+
+  // --- Group Movement with Collision Policy (BETA-UI-6) ---
+
+  moveSelectedKeyframes(deltaFrames) {
+    if (deltaFrames === 0 || this.selectedKeyframes.size === 0) return false;
+    const delta = Math.round(deltaFrames);
+
+    // 1. Collision pre-check: verify boundary and no collision with stationary unselected keyframes
+    for (const [kf, track] of this.selectedKeyframeMap.entries()) {
+      const targetFrame = kf.frame + delta;
+      if (targetFrame < 0) return false;
+
+      const existing = track.getKeyframeAt(targetFrame);
+      if (existing && !this.selectedKeyframes.has(existing)) {
+        // Deterministic collision policy: reject group move if collision would occur
+        return false;
+      }
+    }
+
+    // 2. Execute move in safe order
+    const entries = Array.from(this.selectedKeyframeMap.entries());
+    const originalPositions = entries.map(([kf, track]) => ({ kf, track, fromFrame: kf.frame, toFrame: kf.frame + delta }));
+
+    originalPositions.sort((a, b) => delta > 0 ? (b.fromFrame - a.fromFrame) : (a.fromFrame - b.fromFrame));
+
+    for (const item of originalPositions) {
+      item.track.moveKeyframe(item.fromFrame, item.toFrame);
+    }
+
+    // 3. Register in HistoryManager
+    this._pushHistory({
+      description: `Group Move ${entries.length} Keyframes by ${delta} frames`,
+      undo: () => {
+        const revPositions = [...originalPositions].sort((a, b) => delta > 0 ? (a.toFrame - b.toFrame) : (b.toFrame - a.toFrame));
+        for (const item of revPositions) {
+          item.track.moveKeyframe(item.toFrame, item.fromFrame);
+        }
+        this.render();
+      },
+      execute: () => {
+        for (const item of originalPositions) {
+          item.track.moveKeyframe(item.fromFrame, item.toFrame);
+        }
+        this.render();
+      }
+    });
+
+    this.render();
+    return true;
+  }
+
+  // --- Copy / Paste / Duplicate / Delete (BETA-UI-6) ---
+
+  copySelectedKeyframes() {
+    if (this.selectedKeyframes.size === 0) return [];
+
+    const kfs = Array.from(this.selectedKeyframes);
+    const minFrame = Math.min(...kfs.map(k => k.frame));
+
+    this.clipboard = [];
+    for (const [kf, track] of this.selectedKeyframeMap.entries()) {
+      this.clipboard.push({
+        trackId: track.id,
+        targetNodeId: track.targetNodeId,
+        propertyPath: track.propertyPath,
+        displayName: track.displayName,
+        valueType: track.valueType,
+        offset: kf.frame - minFrame,
+        value: kf.value,
+        interpolation: kf.interpolation,
+        curve: kf.curve ? JSON.parse(JSON.stringify(kf.curve)) : null
+      });
+    }
+
+    return [...this.clipboard];
+  }
+
+  pasteKeyframes(targetFrame = null) {
+    if (!this.clipboard || this.clipboard.length === 0) return [];
+    const scene = this.activeScene;
+    if (!scene) return [];
+
+    const baseFrame = targetFrame !== null ? Math.max(0, Math.round(targetFrame)) : (scene.currentFrame || 0);
+    const pastedKeyframes = [];
+    const addedRecords = [];
+
+    const selectedComp = (this.selection && typeof this.selection.getSelectedComponents === 'function')
+      ? this.selection.getSelectedComponents()[0]
+      : null;
+
+    for (const item of this.clipboard) {
+      const targetNodeId = (selectedComp && selectedComp.id) ? selectedComp.id : item.targetNodeId;
+      let track = scene.tracks.find(t => t.targetNodeId === targetNodeId && t.propertyPath === item.propertyPath);
+      let trackCreated = false;
+
+      if (!track) {
+        track = new AnimationTrack({
+          targetNodeId,
+          propertyPath: item.propertyPath,
+          valueType: item.valueType
+        });
+        scene.addTrack(track);
+        trackCreated = true;
+      }
+
+      const destFrame = baseFrame + item.offset;
+      const prevKf = track.getKeyframeAt(destFrame);
+      const prevValue = prevKf ? prevKf.value : undefined;
+      const prevInterp = prevKf ? prevKf.interpolation : undefined;
+      const prevCurve = prevKf ? prevKf.curve : undefined;
+
+      const newKf = track.addKeyframe(destFrame, item.value, item.interpolation, item.curve);
+      pastedKeyframes.push(newKf);
+      this.selectedKeyframes.add(newKf);
+      this.selectedKeyframeMap.set(newKf, track);
+
+      addedRecords.push({
+        track,
+        destFrame,
+        trackCreated,
+        prevValue,
+        prevInterp,
+        prevCurve,
+        newValue: item.value,
+        newInterp: item.interpolation,
+        newCurve: item.curve
+      });
+    }
+
+    this._pushHistory({
+      description: `Paste ${addedRecords.length} Keyframes at Frame ${baseFrame}`,
+      undo: () => {
+        for (const rec of addedRecords) {
+          if (rec.prevValue !== undefined) {
+            rec.track.addKeyframe(rec.destFrame, rec.prevValue, rec.prevInterp, rec.prevCurve);
+          } else {
+            rec.track.removeKeyframe(rec.destFrame);
+          }
+          if (rec.trackCreated && rec.track.keyframes.length === 0) {
+            scene.removeTrack(rec.track.id);
+          }
+        }
+        this.render();
+      },
+      execute: () => {
+        for (const rec of addedRecords) {
+          rec.track.addKeyframe(rec.destFrame, rec.newValue, rec.newInterp, rec.newCurve);
+        }
+        this.render();
+      }
+    });
+
+    this.render();
+    return pastedKeyframes;
+  }
+
+  duplicateSelectedKeyframes(offsetFrames = 5) {
+    if (this.selectedKeyframes.size === 0) return [];
+    const offset = Math.max(1, Math.round(offsetFrames));
+    const duplicated = [];
+    const records = [];
+
+    for (const [kf, track] of this.selectedKeyframeMap.entries()) {
+      const destFrame = kf.frame + offset;
+      const prev = track.getKeyframeAt(destFrame);
+      const prevValue = prev ? prev.value : undefined;
+      const prevInterp = prev ? prev.interpolation : undefined;
+      const prevCurve = prev ? prev.curve : undefined;
+
+      const newKf = track.addKeyframe(destFrame, kf.value, kf.interpolation, kf.curve ? JSON.parse(JSON.stringify(kf.curve)) : null);
+      duplicated.push(newKf);
+
+      records.push({
+        track,
+        destFrame,
+        prevValue,
+        prevInterp,
+        prevCurve,
+        val: kf.value,
+        interp: kf.interpolation,
+        curve: kf.curve ? JSON.parse(JSON.stringify(kf.curve)) : null
+      });
+    }
+
+    this.selectedKeyframes.clear();
+    this.selectedKeyframeMap.clear();
+    for (let i = 0; i < duplicated.length; i++) {
+      this.selectedKeyframes.add(duplicated[i]);
+      this.selectedKeyframeMap.set(duplicated[i], records[i].track);
+    }
+
+    this._pushHistory({
+      description: `Duplicate ${records.length} Keyframes (+${offset} frames)`,
+      undo: () => {
+        for (const rec of records) {
+          if (rec.prevValue !== undefined) {
+            rec.track.addKeyframe(rec.destFrame, rec.prevValue, rec.prevInterp, rec.prevCurve);
+          } else {
+            rec.track.removeKeyframe(rec.destFrame);
+          }
+        }
+        this.render();
+      },
+      execute: () => {
+        for (const rec of records) {
+          rec.track.addKeyframe(rec.destFrame, rec.val, rec.interp, rec.curve);
+        }
+        this.render();
+      }
+    });
+
+    this.render();
+    return duplicated;
+  }
+
+  deleteSelectedKeyframes() {
+    if (this.selectedKeyframes.size === 0) return 0;
+    const records = [];
+
+    for (const [kf, track] of this.selectedKeyframeMap.entries()) {
+      records.push({
+        track,
+        frame: kf.frame,
+        value: kf.value,
+        interpolation: kf.interpolation,
+        curve: kf.curve ? JSON.parse(JSON.stringify(kf.curve)) : null
+      });
+      track.removeKeyframe(kf.frame);
+    }
+
+    this.selectedKeyframes.clear();
+    this.selectedKeyframeMap.clear();
+
+    this._pushHistory({
+      description: `Delete ${records.length} Selected Keyframes`,
+      undo: () => {
+        for (const rec of records) {
+          rec.track.addKeyframe(rec.frame, rec.value, rec.interpolation, rec.curve);
+        }
+        this.render();
+      },
+      execute: () => {
+        for (const rec of records) {
+          rec.track.removeKeyframe(rec.frame);
+        }
+        this.render();
+      }
+    });
+
+    this.render();
+    return records.length;
+  }
+
+  // --- Snapping (BETA-UI-6) ---
+
+  snapFrame(targetFrame, threshold = 3) {
+    if (!this.snapEnabled) return Math.max(0, Math.round(targetFrame));
+    const scene = this.activeScene;
+    if (!scene) return Math.max(0, Math.round(targetFrame));
+
+    const snapPoints = [0, scene.durationFrames];
+
+    for (const m of scene.markers || []) {
+      snapPoints.push(m.frame);
+    }
+    for (const c of scene.audioCues || []) {
+      snapPoints.push(c.frame);
+    }
+    for (const t of scene.tracks || []) {
+      for (const k of t.keyframes || []) {
+        snapPoints.push(k.frame);
+      }
+    }
+    for (const s of scene.sequence || []) {
+      snapPoints.push(s.startFrame);
+      snapPoints.push(s.startFrame + s.durationFrames);
+    }
+
+    let closest = Math.max(0, Math.round(targetFrame));
+    let minDiff = Infinity;
+
+    for (const p of snapPoints) {
+      const diff = Math.abs(p - targetFrame);
+      if (diff <= threshold && diff < minDiff) {
+        minDiff = diff;
+        closest = p;
+      }
+    }
+
+    return closest;
+  }
+
+  // --- Markers & Audio Cues Authoring (BETA-UI-6) ---
+
+  addMarker(frame = null, name = 'Marker', type = 'Event', metadata = {}) {
+    const scene = this.activeScene;
+    if (!scene) return null;
+    const f = frame !== null ? Math.max(0, Math.round(frame)) : scene.currentFrame;
+    const m = scene.addMarker({ frame: f, name, type, metadata });
+    this.render();
+    return m;
+  }
+
+  updateMarker(markerId, updates = {}) {
+    const scene = this.activeScene;
+    if (!scene) return false;
+    const res = scene.updateMarker(markerId, updates);
+    this.render();
+    return res;
+  }
+
+  deleteMarker(markerId) {
+    const scene = this.activeScene;
+    if (!scene) return false;
+    const res = scene.deleteMarker(markerId);
+    this.render();
+    return res;
+  }
+
+  addAudioCue(frame = null, asset = 'se_select', volume = 1.0, channel = 0) {
+    const scene = this.activeScene;
+    if (!scene) return null;
+    const f = frame !== null ? Math.max(0, Math.round(frame)) : scene.currentFrame;
+    const cue = scene.addAudioCue({ frame: f, asset, volume, channel });
+    this.render();
+    return cue;
+  }
+
+  updateAudioCue(cueId, updates = {}) {
+    const scene = this.activeScene;
+    if (!scene) return false;
+    const res = scene.updateAudioCue(cueId, updates);
+    this.render();
+    return res;
+  }
+
+  deleteAudioCue(cueId) {
+    const scene = this.activeScene;
+    if (!scene) return false;
+    const res = scene.deleteAudioCue(cueId);
+    this.render();
+    return res;
+  }
+
+  // --- Graph Editor Mode (BETA-UI-6) ---
+
+  setViewMode(mode) {
+    if (mode !== 'timeline' && mode !== 'graph') return;
+    this.viewMode = mode;
+    const viewBtn = this.container?.querySelector('#tl_btn_view_mode');
+    if (viewBtn) {
+      viewBtn.textContent = mode === 'graph' ? '⏱ Timeline' : '📊 Graph';
+    }
+    this.render();
+  }
+
   // --- Rendering UI & Canvas ---
 
   render() {
+    if (!this.container) return;
     const scene = this.activeScene;
     if (!scene) return;
 
@@ -818,7 +1397,7 @@ export class TimelineUI {
         visibleRowsCount += tracks.length;
       }
     }
-    const canvasHeight = Math.max(160, visibleRowsCount * this.rowHeight + 40);
+    const canvasHeight = this.viewMode === 'graph' ? 320 : Math.max(160, visibleRowsCount * this.rowHeight + 40);
 
     rulerCanvas.width = canvasWidth;
     rulerCanvas.height = this.rulerHeight;
@@ -829,7 +1408,11 @@ export class TimelineUI {
     lanesGrid.style.height = `${canvasHeight}px`;
 
     this._drawRuler();
-    this._drawLanes();
+    if (this.viewMode === 'graph') {
+      this._drawGraphEditor(lanesCanvas.getContext('2d'), canvasWidth, canvasHeight);
+    } else {
+      this._drawLanes();
+    }
   }
 
   _drawRuler() {
@@ -883,6 +1466,31 @@ export class TimelineUI {
     ctx.moveTo(durationX, 0);
     ctx.lineTo(durationX, h);
     ctx.stroke();
+
+    // Draw Timeline Markers (BETA-UI-6)
+    for (const m of scene.markers || []) {
+      const mx = Math.round(m.frame * this.pxPerFrame);
+      const color = m.type === 'Audio' ? '#38bdf8' : (m.type === 'Comment' ? '#4ade80' : (m.type === 'Sync' ? '#c084fc' : '#fbbf24'));
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(mx, 0);
+      ctx.lineTo(mx + 5, 0);
+      ctx.lineTo(mx + 5, 7);
+      ctx.lineTo(mx, 12);
+      ctx.lineTo(mx - 5, 7);
+      ctx.lineTo(mx - 5, 0);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Draw Audio Cues on ruler bottom
+    for (const c of scene.audioCues || []) {
+      const cx = Math.round(c.frame * this.pxPerFrame);
+      ctx.fillStyle = '#06b6d4';
+      ctx.beginPath();
+      ctx.arc(cx, h - 5, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   _drawLanes() {
@@ -976,6 +1584,184 @@ export class TimelineUI {
 
           currentY += this.rowHeight;
         }
+      }
+    }
+
+    // 3. Render Rubber-band / Marquee selection rectangle (BETA-UI-6)
+    if (this.isMarquee && this.marqueeStart && this.marqueeEnd) {
+      const rx = Math.min(this.marqueeStart.x, this.marqueeEnd.x);
+      const ry = Math.min(this.marqueeStart.y, this.marqueeEnd.y);
+      const rw = Math.abs(this.marqueeStart.x - this.marqueeEnd.x);
+      const rh = Math.abs(this.marqueeStart.y - this.marqueeEnd.y);
+
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
+      ctx.fillRect(rx, ry, rw, rh);
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.strokeRect(rx, ry, rw, rh);
+      ctx.setLineDash([]);
+    }
+  }
+
+  // --- Graph / Curve Editor Canvas Rendering (BETA-UI-6) ---
+
+  _drawGraphEditor(ctx, w, h) {
+    const scene = this.activeScene;
+    if (!scene) return;
+
+    ctx.fillStyle = '#0f111a';
+    ctx.fillRect(0, 0, w, h);
+
+    // Frame vertical grid lines
+    const maxFrames = Math.ceil(w / this.pxPerFrame);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let f = 0; f <= maxFrames; f += 5) {
+      const x = Math.round(f * this.pxPerFrame) + 0.5;
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+    }
+    ctx.stroke();
+
+    const selectedComp = this.selection?.getSelectedComponents()?.[0];
+    const tracksToPlot = (scene.tracks || []).filter(t => {
+      if (selectedComp && t.targetNodeId !== selectedComp.id) return false;
+      return t.propertyPath.startsWith('transform.') || t.propertyPath === 'opacity' || t.propertyPath === 'x' || t.propertyPath === 'y';
+    });
+
+    if (tracksToPlot.length === 0) {
+      ctx.fillStyle = '#64748b';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Select a Node with Animation Tracks to view and edit curves in Graph Editor', w / 2, h / 2);
+      return;
+    }
+
+    let minV = Infinity;
+    let maxV = -Infinity;
+    for (const track of tracksToPlot) {
+      for (const kf of track.keyframes) {
+        if (typeof kf.value === 'number') {
+          minV = Math.min(minV, kf.value);
+          maxV = Math.max(maxV, kf.value);
+        }
+      }
+    }
+    if (!isFinite(minV) || !isFinite(maxV)) {
+      minV = 0; maxV = 100;
+    }
+    if (minV === maxV) {
+      minV -= 10; maxV += 10;
+    }
+    const padding = (maxV - minV) * 0.15 || 5;
+    minV -= padding;
+    maxV += padding;
+
+    const valueToY = (v) => h - 25 - ((v - minV) / (maxV - minV)) * (h - 50);
+
+    // Value horizontal grid lines
+    const valSteps = 5;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.fillStyle = '#64748b';
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'left';
+    for (let i = 0; i <= valSteps; i++) {
+      const v = minV + (i / valSteps) * (maxV - minV);
+      const y = valueToY(v);
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+      ctx.fillText(v.toFixed(1), 5, y - 2);
+    }
+
+    // Zero line
+    if (minV <= 0 && maxV >= 0) {
+      const y0 = valueToY(0);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, y0);
+      ctx.lineTo(w, y0);
+      ctx.stroke();
+    }
+
+    const propColors = {
+      'transform.x': '#ef4444',
+      'transform.y': '#22c55e',
+      'transform.scaleX': '#38bdf8',
+      'transform.scaleY': '#06b6d4',
+      'transform.rotation': '#eab308',
+      'transform.opacity': '#ec4899',
+      'opacity': '#ec4899'
+    };
+
+    // Plot curves for each track
+    for (const track of tracksToPlot) {
+      if (track.keyframes.length === 0) continue;
+      const color = propColors[track.propertyPath] || '#a855f7';
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+
+      ctx.moveTo(0, valueToY(track.evaluate(0)));
+      for (let f = 0; f <= scene.durationFrames; f += 0.5) {
+        const val = track.evaluate(f);
+        const x = f * this.pxPerFrame;
+        const y = valueToY(val);
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // Plot keyframe vertex dots and tangent handles
+      for (const kf of track.keyframes) {
+        const kx = kf.frame * this.pxPerFrame;
+        const ky = valueToY(kf.value);
+        const isSelected = this.selectedKeyframes.has(kf);
+
+        // Draw tangent handles if selected and has curve data
+        if (isSelected && kf.curve) {
+          ctx.strokeStyle = '#94a3b8';
+          ctx.lineWidth = 1;
+
+          // Tangent In
+          const tin = kf.curve.tangentIn || { x: -10, y: 0 };
+          const inX = kx + tin.x * 2;
+          const inY = ky - tin.y * 2;
+          ctx.beginPath();
+          ctx.moveTo(kx, ky);
+          ctx.lineTo(inX, inY);
+          ctx.stroke();
+          ctx.fillStyle = '#38bdf8';
+          ctx.beginPath();
+          ctx.arc(inX, inY, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Tangent Out
+          const tout = kf.curve.tangentOut || { x: 10, y: 0 };
+          const outX = kx + tout.x * 2;
+          const outY = ky - tout.y * 2;
+          ctx.beginPath();
+          ctx.moveTo(kx, ky);
+          ctx.lineTo(outX, outY);
+          ctx.stroke();
+          ctx.fillStyle = '#38bdf8';
+          ctx.beginPath();
+          ctx.arc(outX, outY, 3.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Keyframe circle
+        ctx.fillStyle = isSelected ? '#ffcb05' : color;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = isSelected ? 2 : 1;
+        ctx.beginPath();
+        ctx.arc(kx, ky, isSelected ? 5 : 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
       }
     }
   }
@@ -1150,6 +1936,7 @@ export class TimelineUI {
         <button class="tl-menu-item ${keyframe.interpolation === InterpolationTypes.EASE_IN ? 'active' : ''}" data-interp="easeIn">Ease In</button>
         <button class="tl-menu-item ${keyframe.interpolation === InterpolationTypes.EASE_OUT ? 'active' : ''}" data-interp="easeOut">Ease Out</button>
         <button class="tl-menu-item ${keyframe.interpolation === InterpolationTypes.EASE_IN_OUT ? 'active' : ''}" data-interp="easeInOut">Ease In Out</button>
+        <button class="tl-menu-item ${keyframe.interpolation === InterpolationTypes.BEZIER ? 'active' : ''}" data-interp="bezier">Bezier</button>
       </div>
       <div class="tl-menu-divider"></div>
       <button class="tl-menu-item tl-menu-danger" data-action="delete">Delete Keyframe</button>
@@ -1171,7 +1958,33 @@ export class TimelineUI {
     menu.querySelectorAll('[data-interp]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        keyframe.interpolation = btn.dataset.interp;
+        const oldInterp = keyframe.interpolation;
+        const oldCurve = keyframe.curve ? JSON.parse(JSON.stringify(keyframe.curve)) : null;
+        const newInterp = btn.dataset.interp;
+
+        keyframe.interpolation = newInterp;
+        if (newInterp === InterpolationTypes.BEZIER && !keyframe.curve) {
+          keyframe.curve = { mode: 'bezier', cp1: [0.25, 0.1], cp2: [0.25, 1.0], tangentIn: { x: -10, y: 0 }, tangentOut: { x: 10, y: 0 } };
+        }
+
+        this._pushHistory({
+          description: `Change interpolation to ${newInterp} at frame ${keyframe.frame}`,
+          undo: () => {
+            keyframe.interpolation = oldInterp;
+            keyframe.curve = oldCurve;
+            this.render();
+            if (this.renderer) this.renderer.render();
+          },
+          execute: () => {
+            keyframe.interpolation = newInterp;
+            if (newInterp === InterpolationTypes.BEZIER && !keyframe.curve) {
+              keyframe.curve = { mode: 'bezier', cp1: [0.25, 0.1], cp2: [0.25, 1.0], tangentIn: { x: -10, y: 0 }, tangentOut: { x: 10, y: 0 } };
+            }
+            this.render();
+            if (this.renderer) this.renderer.render();
+          }
+        });
+
         this.render();
         if (this.renderer) this.renderer.render();
         menu.style.display = 'none';

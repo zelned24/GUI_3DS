@@ -37,7 +37,8 @@ export class SceneCppExporter {
     [InterpolationTypes.LINEAR]: { id: 1, name: 'Linear' },
     [InterpolationTypes.EASE_IN]: { id: 2, name: 'EaseIn' },
     [InterpolationTypes.EASE_OUT]: { id: 3, name: 'EaseOut' },
-    [InterpolationTypes.EASE_IN_OUT]: { id: 4, name: 'EaseInOut' }
+    [InterpolationTypes.EASE_IN_OUT]: { id: 4, name: 'EaseInOut' },
+    [InterpolationTypes.BEZIER]: { id: 5, name: 'Bezier' }
   };
 
   static NODE_TYPE_MAP = {
@@ -387,13 +388,21 @@ export class SceneCppExporter {
       rawKfs.sort((a, b) => Math.round(a.frame) - Math.round(b.frame));
 
       const keyframes = rawKfs.map(kf => {
-        const interpInfo = this.INTERPOLATION_MAP[kf.interpolation] || { id: 1, name: 'Linear' };
+        const interp = kf.interpolation || 'linear';
+        const interpInfo = this.INTERPOLATION_MAP[interp] || { id: 1, name: 'Linear' };
+        const curve = kf.curve || {};
+        const cp1 = Array.isArray(curve.cp1) ? curve.cp1 : [0.25, 0.1];
+        const cp2 = Array.isArray(curve.cp2) ? curve.cp2 : [0.25, 1.0];
         return {
           frame: Math.max(0, Math.round(kf.frame)),
           value: Number(kf.value),
-          interpolation: kf.interpolation || 'linear',
+          interpolation: interp,
           interpolationId: interpInfo.id,
-          interpolationName: interpInfo.name
+          interpolationName: interpInfo.name,
+          cp1x: Number(cp1[0] ?? 0.25),
+          cp1y: Number(cp1[1] ?? 0.1),
+          cp2x: Number(cp2[0] ?? 0.25),
+          cp2y: Number(cp2[1] ?? 1.0)
         };
       });
 
@@ -407,6 +416,81 @@ export class SceneCppExporter {
         muted: Boolean(t.muted),
         solo: Boolean(t.solo),
         keyframes
+      };
+    });
+
+    // Clips sorted deterministically
+    const rawClips = Array.isArray(scene.clips) ? scene.clips : [];
+    const clips = rawClips.map((c, cIdx) => {
+      const clipId = c.id || `clip_${cIdx}`;
+      const name = c.name || clipId;
+      const durationFrames = Math.max(1, Math.round(c.durationFrames || 30));
+      const rawClipTracks = Array.isArray(c.tracks) ? c.tracks : [];
+      const tracks = rawClipTracks.map(ct => {
+        const propInfo = this.PROPERTY_MAP[ct.propertyPath] || { id: 1, name: 'X' };
+        const rawKfs = [...(ct.keyframes || [])];
+        rawKfs.sort((a, b) => Math.round(a.frame) - Math.round(b.frame));
+        const keyframes = rawKfs.map(kf => {
+          const interp = kf.interpolation || 'linear';
+          const interpInfo = this.INTERPOLATION_MAP[interp] || { id: 1, name: 'Linear' };
+          const curve = kf.curve || {};
+          const cp1 = Array.isArray(curve.cp1) ? curve.cp1 : [0.25, 0.1];
+          const cp2 = Array.isArray(curve.cp2) ? curve.cp2 : [0.25, 1.0];
+          return {
+            frame: Math.max(0, Math.round(kf.frame)),
+            value: Number(kf.value),
+            interpolation: interp,
+            interpolationId: interpInfo.id,
+            interpolationName: interpInfo.name,
+            cp1x: Number(cp1[0] ?? 0.25),
+            cp1y: Number(cp1[1] ?? 0.1),
+            cp2x: Number(cp2[0] ?? 0.25),
+            cp2y: Number(cp2[1] ?? 1.0)
+          };
+        });
+        return {
+          targetNodeId: ct.targetNodeId || '',
+          propertyPath: ct.propertyPath,
+          propertyId: propInfo.id,
+          propertyName: propInfo.name,
+          keyframes
+        };
+      });
+      return {
+        id: clipId,
+        name,
+        durationFrames,
+        tracks
+      };
+    });
+
+    // Sequencer items sorted deterministically: startFrame, then id
+    const rawSeq = Array.isArray(scene.sequence) ? scene.sequence : [];
+    rawSeq.sort((a, b) => {
+      const fDiff = Math.round(a.startFrame || 0) - Math.round(b.startFrame || 0);
+      if (fDiff !== 0) return fDiff;
+      return String(a.id || '').localeCompare(String(b.id || ''));
+    });
+    const sequence = rawSeq.map((s, sIdx) => {
+      const id = s.id || `seq_${sIdx}`;
+      const clipId = s.clipId || '';
+      const targetNodeId = s.targetNodeId || '';
+      const nodeHash = this.fnv1a32(targetNodeId);
+      const startFrame = Math.round(s.startFrame || 0);
+      const durationFrames = Math.max(1, Math.round(s.durationFrames || 30));
+      const trimStart = Math.max(0, Math.round(s.clipStartOffset || s.trimStart || 0));
+      const loopCount = Math.max(1, Math.round(s.loopCount || 1));
+      const muted = Boolean(s.muted);
+      return {
+        id,
+        clipId,
+        targetNodeId,
+        nodeHash,
+        startFrame,
+        durationFrames,
+        trimStart,
+        loopCount,
+        muted
       };
     });
 
@@ -445,6 +529,8 @@ export class SceneCppExporter {
       bottomBgColor: this.hexColorToCitro2D(scene.bottom?.backgroundColor || '#1a1824'),
       nodes,
       tracks,
+      clips,
+      sequence,
       markers,
       audioCues,
       assets: assetManifest.assets
@@ -479,7 +565,8 @@ enum class InterpolationType : uint8_t {
     Linear = 1,
     EaseIn = 2,
     EaseOut = 3,
-    EaseInOut = 4
+    EaseInOut = 4,
+    Bezier = 5
 };
 
 enum class ScreenTarget : uint8_t {
@@ -501,6 +588,10 @@ struct SceneKeyframe {
     uint16_t frame;
     float value;
     InterpolationType interpolation;
+    float cp1x;
+    float cp1y;
+    float cp2x;
+    float cp2y;
 };
 
 struct SceneTrack {
@@ -509,6 +600,33 @@ struct SceneTrack {
     PropertyId propertyId;
     uint16_t keyframeCount;
     const SceneKeyframe* keyframes;
+};
+
+struct SceneClipTrack {
+    const char* targetNodeId;
+    PropertyId propertyId;
+    uint16_t keyframeCount;
+    const SceneKeyframe* keyframes;
+};
+
+struct SceneClip {
+    const char* id;
+    const char* name;
+    uint16_t durationFrames;
+    uint16_t trackCount;
+    const SceneClipTrack* tracks;
+};
+
+struct SceneSequenceItem {
+    const char* id;
+    const char* clipId;
+    const char* targetNodeId;
+    uint32_t nodeHash;
+    int32_t startFrame;
+    uint16_t durationFrames;
+    uint16_t trimStart;
+    uint16_t loopCount;
+    bool muted;
 };
 
 struct SceneMarker {
@@ -563,6 +681,11 @@ struct SceneDefinition {
     const SceneMarker* markers;
     uint16_t audioCueCount;
     const SceneAudioCue* audioCues;
+    // BETA-UI-6: Clips & Sequence
+    uint16_t clipCount;
+    const SceneClip* clips;
+    uint16_t sequenceCount;
+    const SceneSequenceItem* sequence;
 };
 
 extern const SceneDefinition g_SceneDefinition;
@@ -595,7 +718,7 @@ extern const SceneDefinition g_SceneDefinition;
         lines.push(`static const SceneKeyframe ${varName}[] = {`);
         for (const kf of track.keyframes) {
           const valStr = this.formatFloat(kf.value);
-          lines.push(`    { ${kf.frame}, ${valStr}, InterpolationType::${kf.interpolationName} },`);
+          lines.push(`    { ${kf.frame}, ${valStr}, InterpolationType::${kf.interpolationName}, ${this.formatFloat(kf.cp1x)}, ${this.formatFloat(kf.cp1y)}, ${this.formatFloat(kf.cp2x)}, ${this.formatFloat(kf.cp2y)} },`);
         }
         lines.push('};');
         lines.push('');
@@ -656,7 +779,7 @@ extern const SceneDefinition g_SceneDefinition;
     lines.push('// 4. TIMELINE MARKERS');
     lines.push('// -------------------------------------------------------------');
     if (model.markers.length === 0) {
-      lines.push('static const SceneMarker* s_markers = nullptr;');
+      lines.push('[[maybe_unused]] static const SceneMarker* s_markers = nullptr;');
     } else {
       lines.push('static const SceneMarker s_markers[] = {');
       for (const m of model.markers) {
@@ -671,7 +794,7 @@ extern const SceneDefinition g_SceneDefinition;
     lines.push('// 5. AUDIO CUES');
     lines.push('// -------------------------------------------------------------');
     if (model.audioCues.length === 0) {
-      lines.push('static const SceneAudioCue* s_audioCues = nullptr;');
+      lines.push('[[maybe_unused]] static const SceneAudioCue* s_audioCues = nullptr;');
     } else {
       lines.push('static const SceneAudioCue s_audioCues[] = {');
       for (const c of model.audioCues) {
@@ -681,9 +804,79 @@ extern const SceneDefinition g_SceneDefinition;
     }
     lines.push('');
 
-    // 6. Global Scene Definition
+    // 6. Static Animation Clips
     lines.push('// -------------------------------------------------------------');
-    lines.push('// 6. CANONICAL SCENE DEFINITION');
+    lines.push('// 6. ANIMATION CLIPS');
+    lines.push('// -------------------------------------------------------------');
+    if (!model.clips || model.clips.length === 0) {
+      lines.push('[[maybe_unused]] static const SceneClip* s_clips = nullptr;');
+    } else {
+      for (let cIdx = 0; cIdx < model.clips.length; cIdx++) {
+        const clip = model.clips[cIdx];
+        const safeClip = this.sanitizeIdentifier(clip.id);
+        for (let tIdx = 0; tIdx < clip.tracks.length; tIdx++) {
+          const ct = clip.tracks[tIdx];
+          const safeProp = this.sanitizeIdentifier(ct.propertyName);
+          const varName = `s_clip_kfs_${safeClip}_${safeProp}_${tIdx}`;
+          if (ct.keyframes.length === 0) {
+            lines.push(`// Clip track ${clip.id}.${ct.propertyName} has 0 keyframes`);
+          } else {
+            lines.push(`static const SceneKeyframe ${varName}[] = {`);
+            for (const kf of ct.keyframes) {
+              const valStr = this.formatFloat(kf.value);
+              lines.push(`    { ${kf.frame}, ${valStr}, InterpolationType::${kf.interpolationName}, ${this.formatFloat(kf.cp1x)}, ${this.formatFloat(kf.cp1y)}, ${this.formatFloat(kf.cp2x)}, ${this.formatFloat(kf.cp2y)} },`);
+            }
+            lines.push('};');
+            lines.push('');
+          }
+        }
+
+        const trackArrayVar = `s_clip_tracks_${safeClip}`;
+        if (clip.tracks.length === 0) {
+          lines.push(`[[maybe_unused]] static const SceneClipTrack* ${trackArrayVar} = nullptr;`);
+        } else {
+          lines.push(`static const SceneClipTrack ${trackArrayVar}[] = {`);
+          for (let tIdx = 0; tIdx < clip.tracks.length; tIdx++) {
+            const ct = clip.tracks[tIdx];
+            const safeProp = this.sanitizeIdentifier(ct.propertyName);
+            const kfVar = ct.keyframes.length > 0 ? `s_clip_kfs_${safeClip}_${safeProp}_${tIdx}` : 'nullptr';
+            const targetStr = ct.targetNodeId ? `"${this.escapeCppString(ct.targetNodeId)}"` : 'nullptr';
+            lines.push(`    { ${targetStr}, PropertyId::${ct.propertyName}, ${ct.keyframes.length}, ${kfVar} },`);
+          }
+          lines.push('};');
+          lines.push('');
+        }
+      }
+
+      lines.push('static const SceneClip s_clips[] = {');
+      for (const clip of model.clips) {
+        const safeClip = this.sanitizeIdentifier(clip.id);
+        const trackVar = clip.tracks.length > 0 ? `s_clip_tracks_${safeClip}` : 'nullptr';
+        lines.push(`    { "${this.escapeCppString(clip.id)}", "${this.escapeCppString(clip.name)}", ${clip.durationFrames}, ${clip.tracks.length}, ${trackVar} },`);
+      }
+      lines.push('};');
+    }
+    lines.push('');
+
+    // 7. Static Sequencer Items
+    lines.push('// -------------------------------------------------------------');
+    lines.push('// 7. SEQUENCER PLACEMENT');
+    lines.push('// -------------------------------------------------------------');
+    if (!model.sequence || model.sequence.length === 0) {
+      lines.push('[[maybe_unused]] static const SceneSequenceItem* s_sequence = nullptr;');
+    } else {
+      lines.push('static const SceneSequenceItem s_sequence[] = {');
+      for (const s of model.sequence) {
+        const hexHash = `0x${s.nodeHash.toString(16).toUpperCase().padStart(8, '0')}`;
+        lines.push(`    { "${this.escapeCppString(s.id)}", "${this.escapeCppString(s.clipId)}", "${this.escapeCppString(s.targetNodeId)}", ${hexHash}, ${s.startFrame}, ${s.durationFrames}, ${s.trimStart}, ${s.loopCount}, ${s.muted ? 'true' : 'false'} },`);
+      }
+      lines.push('};');
+    }
+    lines.push('');
+
+    // 8. Global Scene Definition
+    lines.push('// -------------------------------------------------------------');
+    lines.push('// 8. CANONICAL SCENE DEFINITION');
     lines.push('// -------------------------------------------------------------');
     lines.push('const SceneDefinition g_SceneDefinition = {');
     lines.push(`    "${this.escapeCppString(model.sceneId)}",`);
@@ -698,7 +891,11 @@ extern const SceneDefinition g_SceneDefinition;
     lines.push(`    ${model.markers.length},`);
     lines.push(`    ${model.markers.length > 0 ? 's_markers' : 'nullptr'},`);
     lines.push(`    ${model.audioCues.length},`);
-    lines.push(`    ${model.audioCues.length > 0 ? 's_audioCues' : 'nullptr'}`);
+    lines.push(`    ${model.audioCues.length > 0 ? 's_audioCues' : 'nullptr'},`);
+    lines.push(`    ${model.clips ? model.clips.length : 0},`);
+    lines.push(`    ${model.clips && model.clips.length > 0 ? 's_clips' : 'nullptr'},`);
+    lines.push(`    ${model.sequence ? model.sequence.length : 0},`);
+    lines.push(`    ${model.sequence && model.sequence.length > 0 ? 's_sequence' : 'nullptr'}`);
     lines.push('};');
     lines.push('');
     lines.push('} // namespace Citro2D');
@@ -836,8 +1033,10 @@ public:
     bool isLooping() const { return m_isLooping; }
 
     // Pure mathematical evaluation matching TimelineEvaluator.js
-    static float evaluateProgress(float t, InterpolationType type);
+    static float evaluateBezier(float t, float x1, float y1, float x2, float y2);
+    static float evaluateProgress(float t, InterpolationType type, float cp1x = 0.25f, float cp1y = 0.1f, float cp2x = 0.25f, float cp2y = 1.0f);
     static float evaluateTrack(const SceneTrack& track, uint32_t frame, float defaultValue);
+    static float evaluateClipTrack(const SceneClipTrack& track, uint32_t frame, float defaultValue);
 
     // Node evaluation (local overrides at frame)
     void evaluateNodeLocal(uint32_t nodeIndex, uint32_t frame, EvaluatedTransform& outTransform, bool& outVisible) const;
@@ -935,7 +1134,57 @@ void SceneTimeline::togglePlay() {
 // -------------------------------------------------------------
 // PURE MATHEMATICAL INTERPOLATION (Identical to JS Interpolation.js)
 // -------------------------------------------------------------
-float SceneTimeline::evaluateProgress(float t, InterpolationType type) {
+float SceneTimeline::evaluateBezier(float t, float x1, float y1, float x2, float y2) {
+    if (t <= 0.0f) return 0.0f;
+    if (t >= 1.0f) return 1.0f;
+
+    auto sampleX = [x1, x2](float u) -> float {
+        const float oneMinusU = 1.0f - u;
+        return 3.0f * oneMinusU * oneMinusU * u * x1 + 3.0f * oneMinusU * u * u * x2 + u * u * u;
+    };
+
+    auto sampleXDerivative = [x1, x2](float u) -> float {
+        const float oneMinusU = 1.0f - u;
+        return 3.0f * oneMinusU * oneMinusU * x1 + 6.0f * oneMinusU * u * (x2 - x1) + 3.0f * u * u * (1.0f - x2);
+    };
+
+    auto sampleY = [y1, y2](float u) -> float {
+        const float oneMinusU = 1.0f - u;
+        return 3.0f * oneMinusU * oneMinusU * u * y1 + 3.0f * oneMinusU * u * u * y2 + u * u * u;
+    };
+
+    float u = t;
+    for (int i = 0; i < 8; ++i) {
+        const float x = sampleX(u) - t;
+        if (std::fabs(x) < 1e-6f) {
+            return sampleY(u);
+        }
+        const float d = sampleXDerivative(u);
+        if (std::fabs(d) < 1e-6f) break;
+        u = u - x / d;
+        if (u < 0.0f || u > 1.0f) break;
+    }
+
+    float low = 0.0f;
+    float high = 1.0f;
+    u = t;
+    for (int i = 0; i < 12; ++i) {
+        const float x = sampleX(u);
+        if (std::fabs(x - t) < 1e-5f) {
+            return sampleY(u);
+        }
+        if (x > t) {
+            high = u;
+        } else {
+            low = u;
+        }
+        u = 0.5f * (low + high);
+    }
+
+    return sampleY(u);
+}
+
+float SceneTimeline::evaluateProgress(float t, InterpolationType type, float cp1x, float cp1y, float cp2x, float cp2y) {
     const float clampedT = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
 
     switch (type) {
@@ -958,6 +1207,9 @@ float SceneTimeline::evaluateProgress(float t, InterpolationType type) {
             return clampedT < 0.5f
                 ? 2.0f * clampedT * clampedT
                 : -1.0f + (4.0f - 2.0f * clampedT) * clampedT;
+
+        case InterpolationType::Bezier:
+            return evaluateBezier(clampedT, cp1x, cp1y, cp2x, cp2y);
 
         default:
             return clampedT;
@@ -995,7 +1247,50 @@ float SceneTimeline::evaluateTrack(const SceneTrack& track, uint32_t frame, floa
             }
 
             const float t = static_cast<float>(frame - k0.frame) / static_cast<float>(k1.frame - k0.frame);
-            const float progress = evaluateProgress(t, k0.interpolation);
+            const float progress = evaluateProgress(t, k0.interpolation, k0.cp1x, k0.cp1y, k0.cp2x, k0.cp2y);
+
+            if (track.propertyId == PropertyId::Visible) {
+                return progress < 0.5f ? k0.value : k1.value;
+            }
+
+            return k0.value + (k1.value - k0.value) * progress;
+        }
+    }
+
+    return last.value;
+}
+
+float SceneTimeline::evaluateClipTrack(const SceneClipTrack& track, uint32_t frame, float defaultValue) {
+    if (track.keyframeCount == 0 || track.keyframes == nullptr) {
+        return defaultValue;
+    }
+
+    if (track.keyframeCount == 1) {
+        return track.keyframes[0].value;
+    }
+
+    // Before or at first keyframe
+    if (frame <= track.keyframes[0].frame) {
+        return track.keyframes[0].value;
+    }
+
+    // After or at last keyframe
+    const SceneKeyframe& last = track.keyframes[track.keyframeCount - 1];
+    if (frame >= last.frame) {
+        return last.value;
+    }
+
+    for (uint16_t i = 0; i < track.keyframeCount - 1; ++i) {
+        const SceneKeyframe& k0 = track.keyframes[i];
+        const SceneKeyframe& k1 = track.keyframes[i + 1];
+
+        if (frame >= k0.frame && frame <= k1.frame) {
+            if (k0.frame == k1.frame) {
+                return k0.value;
+            }
+
+            const float t = static_cast<float>(frame - k0.frame) / static_cast<float>(k1.frame - k0.frame);
+            const float progress = evaluateProgress(t, k0.interpolation, k0.cp1x, k0.cp1y, k0.cp2x, k0.cp2y);
 
             if (track.propertyId == PropertyId::Visible) {
                 return progress < 0.5f ? k0.value : k1.value;
@@ -1023,7 +1318,71 @@ void SceneTimeline::evaluateNodeLocal(uint32_t nodeIndex, uint32_t frame, Evalua
     outTransform.opacity = node.opacity;
     outVisible = node.visible;
 
-    // Evaluate all active tracks targeting this node
+    // 1. Evaluate sequencer clips placed on timeline targeting this node
+    if (m_scene.sequenceCount > 0 && m_scene.sequence != nullptr && m_scene.clipCount > 0 && m_scene.clips != nullptr) {
+        for (uint16_t s = 0; s < m_scene.sequenceCount; ++s) {
+            const SceneSequenceItem& seq = m_scene.sequence[s];
+            if (seq.muted) continue;
+
+            const char* targetId = (seq.targetNodeId && seq.targetNodeId[0] != '\\0') ? seq.targetNodeId : nullptr;
+            if (!targetId || std::strcmp(targetId, node.id) != 0) continue;
+
+            const int32_t start = seq.startFrame;
+            const int32_t dur = static_cast<int32_t>(seq.durationFrames);
+            const int32_t cur = static_cast<int32_t>(frame);
+            if (cur < start || cur > (start + dur)) continue;
+
+            // Find clip
+            const SceneClip* clip = nullptr;
+            for (uint16_t c = 0; c < m_scene.clipCount; ++c) {
+                if (std::strcmp(m_scene.clips[c].id, seq.clipId) == 0) {
+                    clip = &m_scene.clips[c];
+                    break;
+                }
+            }
+            if (!clip || clip->trackCount == 0 || clip->tracks == nullptr || clip->durationFrames == 0) continue;
+
+            int32_t offset = cur - start + static_cast<int32_t>(seq.trimStart);
+            if (seq.loopCount > 1) {
+                offset = offset % static_cast<int32_t>(clip->durationFrames);
+            }
+            if (offset < 0) offset = 0;
+            if (offset > static_cast<int32_t>(clip->durationFrames)) offset = static_cast<int32_t>(clip->durationFrames);
+
+            for (uint16_t t = 0; t < clip->trackCount; ++t) {
+                const SceneClipTrack& cTrack = clip->tracks[t];
+                switch (cTrack.propertyId) {
+                    case PropertyId::X:
+                        outTransform.x = evaluateClipTrack(cTrack, static_cast<uint32_t>(offset), outTransform.x);
+                        break;
+                    case PropertyId::Y:
+                        outTransform.y = evaluateClipTrack(cTrack, static_cast<uint32_t>(offset), outTransform.y);
+                        break;
+                    case PropertyId::ScaleX:
+                        outTransform.scaleX = evaluateClipTrack(cTrack, static_cast<uint32_t>(offset), outTransform.scaleX);
+                        break;
+                    case PropertyId::ScaleY:
+                        outTransform.scaleY = evaluateClipTrack(cTrack, static_cast<uint32_t>(offset), outTransform.scaleY);
+                        break;
+                    case PropertyId::Rotation:
+                        outTransform.rotation = evaluateClipTrack(cTrack, static_cast<uint32_t>(offset), outTransform.rotation);
+                        break;
+                    case PropertyId::Opacity:
+                        outTransform.opacity = evaluateClipTrack(cTrack, static_cast<uint32_t>(offset), outTransform.opacity);
+                        if (outTransform.opacity < 0.0f) outTransform.opacity = 0.0f;
+                        if (outTransform.opacity > 1.0f) outTransform.opacity = 1.0f;
+                        break;
+                    case PropertyId::Visible:
+                        outVisible = evaluateClipTrack(cTrack, static_cast<uint32_t>(offset), outVisible ? 1.0f : 0.0f) >= 0.5f;
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+    }
+
+    // 2. Evaluate direct tracks on the scene targeting this node (layering / overriding)
     for (uint16_t t = 0; t < m_scene.trackCount; ++t) {
         const SceneTrack& track = m_scene.tracks[t];
         if (track.nodeHash != node.idHash) continue;
@@ -1298,8 +1657,46 @@ Screen* createScene() {
     const evaluatedMap = new Map();
     const intFrame = Math.max(0, Math.round(frame));
 
+    // Bezier solver identical to C++ evaluateBezier
+    const evalBezier = (t, x1 = 0.25, y1 = 0.1, x2 = 0.25, y2 = 1.0) => {
+      if (t <= 0.0) return 0.0;
+      if (t >= 1.0) return 1.0;
+      const sampleX = (u) => {
+        const oneMinusU = 1.0 - u;
+        return 3.0 * oneMinusU * oneMinusU * u * x1 + 3.0 * oneMinusU * u * u * x2 + u * u * u;
+      };
+      const sampleXDerivative = (u) => {
+        const oneMinusU = 1.0 - u;
+        return 3.0 * oneMinusU * oneMinusU * x1 + 6.0 * oneMinusU * u * (x2 - x1) + 3.0 * u * u * (1.0 - x2);
+      };
+      const sampleY = (u) => {
+        const oneMinusU = 1.0 - u;
+        return 3.0 * oneMinusU * oneMinusU * u * y1 + 3.0 * oneMinusU * u * u * y2 + u * u * u;
+      };
+      let u = t;
+      for (let i = 0; i < 8; ++i) {
+        const x = sampleX(u) - t;
+        if (Math.abs(x) < 1e-6) return sampleY(u);
+        const d = sampleXDerivative(u);
+        if (Math.abs(d) < 1e-6) break;
+        u = u - x / d;
+        if (u < 0.0 || u > 1.0) break;
+      }
+      let low = 0.0;
+      let high = 1.0;
+      u = t;
+      for (let i = 0; i < 12; ++i) {
+        const x = sampleX(u);
+        if (Math.abs(x - t) < 1e-5) return sampleY(u);
+        if (x > t) high = u;
+        else low = u;
+        u = 0.5 * (low + high);
+      }
+      return sampleY(u);
+    };
+
     // Progress evaluation identical to C++
-    const evalProgress = (t, interpType) => {
+    const evalProgress = (t, interpType, cp1x = 0.25, cp1y = 0.1, cp2x = 0.25, cp2y = 1.0) => {
       const clampedT = Math.max(0, Math.min(1, t));
       switch (interpType) {
         case 0: // Step
@@ -1314,26 +1711,28 @@ Screen* createScene() {
           return clampedT < 0.5
             ? 2.0 * clampedT * clampedT
             : -1.0 + (4.0 - 2.0 * clampedT) * clampedT;
+        case 5: // Bezier
+          return evalBezier(clampedT, cp1x, cp1y, cp2x, cp2y);
         default:
           return clampedT;
       }
     };
 
     // Track evaluation identical to C++ evaluateTrack
-    const evalTrack = (track) => {
+    const evalTrack = (track, atFrame) => {
       if (!track.keyframes || track.keyframes.length === 0) return null;
       if (track.keyframes.length === 1) return track.keyframes[0].value;
-      if (intFrame <= track.keyframes[0].frame) return track.keyframes[0].value;
+      if (atFrame <= track.keyframes[0].frame) return track.keyframes[0].value;
       const last = track.keyframes[track.keyframes.length - 1];
-      if (intFrame >= last.frame) return last.value;
+      if (atFrame >= last.frame) return last.value;
 
       for (let i = 0; i < track.keyframes.length - 1; i++) {
         const k0 = track.keyframes[i];
         const k1 = track.keyframes[i + 1];
-        if (intFrame >= k0.frame && intFrame <= k1.frame) {
+        if (atFrame >= k0.frame && atFrame <= k1.frame) {
           if (k0.frame === k1.frame) return k0.value;
-          const t = (intFrame - k0.frame) / (k1.frame - k0.frame);
-          const progress = evalProgress(t, k0.interpolationId);
+          const t = (atFrame - k0.frame) / (k1.frame - k0.frame);
+          const progress = evalProgress(t, k0.interpolationId, k0.cp1x, k0.cp1y, k0.cp2x, k0.cp2y);
           if (track.propertyId === 7) { // Visible
             return progress < 0.5 ? k0.value : k1.value;
           }
@@ -1343,22 +1742,16 @@ Screen* createScene() {
       return last.value;
     };
 
-    // Evaluate each track
-    for (const track of exportModel.tracks) {
-      if (track.muted) continue;
-      const evaluatedVal = evalTrack(track);
-      if (evaluatedVal === null || evaluatedVal === undefined) continue;
-
-      if (!evaluatedMap.has(track.targetNodeId)) {
-        evaluatedMap.set(track.targetNodeId, {
+    const applyValue = (targetNodeId, propertyId, evaluatedVal) => {
+      if (!evaluatedMap.has(targetNodeId)) {
+        evaluatedMap.set(targetNodeId, {
           transform: {},
           visible: undefined,
           opacity: undefined
         });
       }
-
-      const nodeEval = evaluatedMap.get(track.targetNodeId);
-      switch (track.propertyId) {
+      const nodeEval = evaluatedMap.get(targetNodeId);
+      switch (propertyId) {
         case 1: nodeEval.transform.x = evaluatedVal; break;
         case 2: nodeEval.transform.y = evaluatedVal; break;
         case 3: nodeEval.transform.scaleX = evaluatedVal; break;
@@ -1373,6 +1766,41 @@ Screen* createScene() {
           break;
         default:
           break;
+      }
+    };
+
+    // 1. Evaluate sequencer clips placed on timeline
+    if (Array.isArray(exportModel.sequence)) {
+      for (const seq of exportModel.sequence) {
+        if (seq.muted) continue;
+        if (intFrame < seq.startFrame || intFrame > seq.startFrame + seq.durationFrames) continue;
+
+        const clip = exportModel.clips?.find(c => c.id === seq.clipId);
+        if (!clip || !clip.tracks || clip.durationFrames <= 0) continue;
+
+        let offset = intFrame - seq.startFrame + (seq.trimStart || 0);
+        if (seq.loopCount > 1) {
+          offset = offset % clip.durationFrames;
+        }
+        const localFrame = Math.max(0, Math.min(clip.durationFrames, offset));
+
+        for (const cTrack of clip.tracks) {
+          const evaluatedVal = evalTrack(cTrack, localFrame);
+          if (evaluatedVal === null || evaluatedVal === undefined) continue;
+          const targetNodeId = seq.targetNodeId || cTrack.targetNodeId;
+          if (!targetNodeId || targetNodeId === '__target__') continue;
+          applyValue(targetNodeId, cTrack.propertyId, evaluatedVal);
+        }
+      }
+    }
+
+    // 2. Evaluate direct tracks on the scene
+    if (Array.isArray(exportModel.tracks)) {
+      for (const track of exportModel.tracks) {
+        if (track.muted) continue;
+        const evaluatedVal = evalTrack(track, intFrame);
+        if (evaluatedVal === null || evaluatedVal === undefined) continue;
+        applyValue(track.targetNodeId, track.propertyId, evaluatedVal);
       }
     }
 

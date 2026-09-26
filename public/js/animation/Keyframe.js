@@ -6,7 +6,18 @@ export const InterpolationTypes = {
   LINEAR: 'linear',
   EASE_IN: 'easeIn',
   EASE_OUT: 'easeOut',
-  EASE_IN_OUT: 'easeInOut'
+  EASE_IN_OUT: 'easeInOut',
+  BEZIER: 'bezier'
+};
+
+/**
+ * TangentModes - Tangent calculation modes for curve handles.
+ */
+export const TangentModes = {
+  AUTO: 'auto',
+  LINEAR: 'linear',
+  STEP: 'step',
+  BEZIER: 'bezier'
 };
 
 /**
@@ -36,7 +47,18 @@ export class Keyframe {
       ? data.interpolation
       : InterpolationTypes.LINEAR;
 
-    this.curve = data.curve ? { ...data.curve } : null;
+    if (data.curve) {
+      this.curve = {
+        mode: data.curve.mode || (this.interpolation === InterpolationTypes.BEZIER ? TangentModes.BEZIER : TangentModes.AUTO),
+        cp1: Array.isArray(data.curve.cp1) ? [Number(data.curve.cp1[0]), Number(data.curve.cp1[1])] : [0.25, 0.1],
+        cp2: Array.isArray(data.curve.cp2) ? [Number(data.curve.cp2[0]), Number(data.curve.cp2[1])] : [0.25, 1.0],
+        tangentIn: data.curve.tangentIn ? { x: Number(data.curve.tangentIn.x || 0), y: Number(data.curve.tangentIn.y || 0) } : { x: -5, y: 0 },
+        tangentOut: data.curve.tangentOut ? { x: Number(data.curve.tangentOut.x || 0), y: Number(data.curve.tangentOut.y || 0) } : { x: 5, y: 0 }
+      };
+    } else {
+      this.curve = null;
+    }
+
     this.selected = Boolean(data.selected);
   }
 
@@ -48,7 +70,13 @@ export class Keyframe {
       frame: overrides.frame !== undefined ? overrides.frame : this.frame,
       value: overrides.value !== undefined ? overrides.value : this.value,
       interpolation: overrides.interpolation || this.interpolation,
-      curve: overrides.curve !== undefined ? overrides.curve : (this.curve ? { ...this.curve } : null),
+      curve: overrides.curve !== undefined ? overrides.curve : (this.curve ? {
+        mode: this.curve.mode,
+        cp1: [...this.curve.cp1],
+        cp2: [...this.curve.cp2],
+        tangentIn: { ...this.curve.tangentIn },
+        tangentOut: { ...this.curve.tangentOut }
+      } : null),
       selected: overrides.selected !== undefined ? overrides.selected : this.selected
     });
   }
@@ -63,7 +91,13 @@ export class Keyframe {
       interpolation: this.interpolation
     };
     if (this.curve) {
-      json.curve = { ...this.curve };
+      json.curve = {
+        mode: this.curve.mode || 'auto',
+        cp1: [...this.curve.cp1],
+        cp2: [...this.curve.cp2],
+        tangentIn: { ...this.curve.tangentIn },
+        tangentOut: { ...this.curve.tangentOut }
+      };
     }
     return json;
   }

@@ -110,6 +110,19 @@ void ScenePlayer::update(float dt) {
     if (m_timeline) {
         m_timeline->seek(m_currentFrame);
     }
+
+    // Update BETA-UI-6 timeline metrics
+    RuntimeAssetManager& assetMgr = getRuntimeAssetManager();
+    uint32_t activeClips = 0;
+    if (m_sceneDef.sequenceCount > 0 && m_sceneDef.sequence != nullptr) {
+        for (uint16_t s = 0; s < m_sceneDef.sequenceCount; ++s) {
+            const auto& seq = m_sceneDef.sequence[s];
+            if (!seq.muted && static_cast<int32_t>(m_currentFrame) >= seq.startFrame && static_cast<int32_t>(m_currentFrame) < (seq.startFrame + seq.durationFrames)) {
+                activeClips++;
+            }
+        }
+    }
+    assetMgr.recordTimelineMetrics(activeClips, m_sceneDef.trackCount, 0, m_sceneDef.sequenceCount);
 }
 
 void ScenePlayer::calculateTextureScale(

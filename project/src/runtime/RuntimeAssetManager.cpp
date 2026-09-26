@@ -5,7 +5,7 @@
 namespace Citro2D {
 
 RuntimeAssetManager::RuntimeAssetManager()
-    : m_metrics{0, 0, 0, 0, 0, 0, 0}
+    : m_metrics{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
     , m_lastError(AssetError::None)
     , m_lastErrorDetail("")
     , m_initialized(false)
@@ -32,7 +32,7 @@ void RuntimeAssetManager::fini() {
 void RuntimeAssetManager::resetMetrics() {
     m_metrics = {
         static_cast<uint32_t>(m_cache.size()),
-        0, 0, 0, 0, 0, 0
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0
     };
     m_lastError = AssetError::None;
     m_lastErrorDetail = "";
